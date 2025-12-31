@@ -353,7 +353,16 @@ class CodesmApp(App):
         """Initialize when app mounts"""
         for theme in THEMES.values():
             self.register_theme(theme)
-        self.theme = "codesm-dark"
+        
+        # Load saved theme preference
+        from codesm.auth.credentials import CredentialStore
+        store = CredentialStore()
+        saved_theme = store.get_preferred_theme()
+        if saved_theme and saved_theme in [t.name.replace("codesm-", "") for t in THEMES.values()]:
+            self._theme_name = saved_theme
+            self.theme = f"codesm-{saved_theme}"
+        else:
+            self.theme = "codesm-dark"
 
         from codesm.agent.agent import Agent
         from codesm.session.session import Session
@@ -434,6 +443,12 @@ class CodesmApp(App):
         if result:
             self._theme_name = result
             self.theme = f"codesm-{result}"
+            
+            # Save theme preference
+            from codesm.auth.credentials import CredentialStore
+            store = CredentialStore()
+            store.set_preferred_theme(result)
+            
             from .themes import get_theme_display_name
             self.notify(f"Theme: {get_theme_display_name(result)}")
         self._get_active_input().focus()
@@ -759,6 +774,12 @@ class CodesmApp(App):
         """Toggle between themes"""
         self._theme_name = get_next_theme(self._theme_name)
         self.theme = f"codesm-{self._theme_name}"
+        
+        # Save theme preference
+        from codesm.auth.credentials import CredentialStore
+        store = CredentialStore()
+        store.set_preferred_theme(self._theme_name)
+        
         self.notify(f"Theme: {self._theme_name}")
 
     def action_toggle_sidebar(self):

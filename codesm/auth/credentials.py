@@ -70,3 +70,16 @@ class CredentialStore:
             data["_preferences"] = {}
         data["_preferences"]["model"] = model
         self._save(data)
+
+    def get_preferred_theme(self) -> Optional[str]:
+        """Get the user's preferred theme"""
+        data = self._load()
+        return data.get("_preferences", {}).get("theme")
+
+    def set_preferred_theme(self, theme: str):
+        """Set the user's preferred theme"""
+        data = self._load()
+        if "_preferences" not in data:
+            data["_preferences"] = {}
+        data["_preferences"]["theme"] = theme
+        self._save(data)
