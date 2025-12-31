@@ -79,8 +79,8 @@ class CommandPaletteModal(ModalScreen):
     }
 
     CommandItem.-selected {
-        background: #e5a07b;
-        color: #1e1e2e;
+        background: $secondary;
+        color: $background;
     }
     """
 

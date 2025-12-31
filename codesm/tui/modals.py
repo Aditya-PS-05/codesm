@@ -133,12 +133,12 @@ class ModelSelectModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: #e5a07b;
-        color: #1e1e2e;
+        background: $secondary;
+        color: $background;
     }
 
     ModalListItem.-selected .item-content {
-        color: #1e1e2e;
+        color: $background;
         text-style: bold;
     }
 
@@ -314,12 +314,12 @@ class ProviderConnectModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: #e5a07b;
-        color: #1e1e2e;
+        background: $secondary;
+        color: $background;
     }
 
     ModalListItem.-selected .item-content {
-        color: #1e1e2e;
+        color: $background;
         text-style: bold;
     }
     """
@@ -418,7 +418,7 @@ class ClickableURL(Static):
     ClickableURL {
         padding: 1;
         background: $panel;
-        color: #e5a07b;
+        color: $secondary;
         margin: 1 0;
     }
 
@@ -528,12 +528,12 @@ class AuthMethodModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: #e5a07b;
-        color: #1e1e2e;
+        background: $secondary;
+        color: $background;
     }
 
     ModalListItem.-selected .item-content {
-        color: #1e1e2e;
+        color: $background;
         text-style: bold;
     }
     """
@@ -640,7 +640,7 @@ class ClaudeOAuthModal(ModalScreen):
 
     #modal-title {
         text-style: bold;
-        color: #e5a07b;
+        color: $secondary;
     }
 
     #esc-hint {
@@ -656,7 +656,7 @@ class ClaudeOAuthModal(ModalScreen):
     #oauth-url {
         padding: 1;
         background: $panel;
-        color: #e5a07b;
+        color: $secondary;
         margin: 1 0;
     }
 
@@ -799,12 +799,12 @@ class ThemeSelectModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: #e5a07b;
-        color: #1e1e2e;
+        background: $secondary;
+        color: $background;
     }
 
     ModalListItem.-selected .item-content {
-        color: #1e1e2e;
+        color: $background;
         text-style: bold;
     }
     """

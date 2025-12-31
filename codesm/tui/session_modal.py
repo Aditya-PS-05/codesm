@@ -81,17 +81,17 @@ class SessionListModal(ModalScreen):
     }
 
     SessionListItem.-selected {
-        background: #e5a07b;
-        color: #1e1e2e;
+        background: $secondary;
+        color: $background;
     }
 
     SessionListItem.-selected .session-title {
-        color: #1e1e2e;
+        color: $background;
         text-style: bold;
     }
 
     SessionListItem.-selected .session-date {
-        color: #1e1e2e;
+        color: $background;
     }
 
     #modal-footer {
