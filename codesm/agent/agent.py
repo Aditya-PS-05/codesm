@@ -2,7 +2,6 @@
 
 from pathlib import Path
 from typing import AsyncIterator
-from dataclasses import dataclass, field
 
 from codesm.provider.base import get_provider, StreamChunk
 from codesm.tool.registry import ToolRegistry
@@ -11,21 +10,34 @@ from codesm.agent.prompt import SYSTEM_PROMPT
 from codesm.agent.loop import ReActLoop
 
 
-@dataclass
 class Agent:
     """AI coding agent that can read, write, and execute code"""
-    
-    directory: Path
-    model: str
-    session: Session | None = None
-    max_iterations: int = 15
-    
-    def __post_init__(self):
-        self.directory = Path(self.directory).resolve()
-        self.session = Session.create(self.directory)
+
+    def __init__(
+        self,
+        directory: Path,
+        model: str,
+        session: Session | None = None,
+        max_iterations: int = 15
+    ):
+        self.directory = Path(directory).resolve()
+        self._model = model
+        self.session = session or Session.create(self.directory)
+        self.max_iterations = max_iterations
         self.tools = ToolRegistry()
-        self.provider = get_provider(self.model)
+        self.provider = get_provider(self._model)
         self.react_loop = ReActLoop(max_iterations=self.max_iterations)
+
+    @property
+    def model(self) -> str:
+        """Get current model"""
+        return self._model
+
+    @model.setter
+    def model(self, value: str):
+        """Set model and recreate provider"""
+        self._model = value
+        self.provider = get_provider(value)
     
     async def chat(self, message: str) -> AsyncIterator[str]:
         """Send a message and stream the response"""

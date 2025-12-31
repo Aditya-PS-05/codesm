@@ -27,7 +27,11 @@ async def chat(request: ChatRequest, directory: str = "."):
     
     async def stream():
         async for chunk in agent.chat(request.message):
-            yield chunk
+            # chunk is a StreamChunk object, extract the content
+            if hasattr(chunk, 'content'):
+                yield chunk.content
+            else:
+                yield str(chunk)
     
     return StreamingResponse(stream(), media_type="text/plain")
 

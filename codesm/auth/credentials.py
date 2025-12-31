@@ -57,3 +57,16 @@ class CredentialStore:
         """Check if provider is authenticated"""
         creds = self.get(provider)
         return creds is not None and ("api_key" in creds or "access_token" in creds)
+
+    def get_preferred_model(self) -> Optional[str]:
+        """Get the user's preferred model"""
+        data = self._load()
+        return data.get("_preferences", {}).get("model")
+
+    def set_preferred_model(self, model: str):
+        """Set the user's preferred model"""
+        data = self._load()
+        if "_preferences" not in data:
+            data["_preferences"] = {}
+        data["_preferences"]["model"] = model
+        self._save(data)

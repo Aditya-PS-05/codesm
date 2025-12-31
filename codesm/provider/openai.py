@@ -2,9 +2,14 @@
 
 from typing import AsyncIterator
 import json
+import os
+import logging
 import openai
 
 from .base import Provider, StreamChunk
+from codesm.auth.credentials import CredentialStore
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider(Provider):
@@ -12,7 +17,22 @@ class OpenAIProvider(Provider):
     
     def __init__(self, model: str):
         self.model = model
-        self.client = openai.AsyncOpenAI()
+        self.client = self._create_client()
+    
+    def _create_client(self) -> openai.AsyncOpenAI:
+        """Create OpenAI client with stored credentials or env var"""
+        store = CredentialStore()
+        creds = store.get("openai")
+        
+        if creds and creds.get("api_key"):
+            return openai.AsyncOpenAI(api_key=creds["api_key"])
+        
+        # Fall back to environment variable
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            return openai.AsyncOpenAI(api_key=api_key)
+        
+        raise ValueError("No OpenAI credentials found. Run /connect to authenticate.")
     
     def _convert_tools(self, tools: list[dict] | None) -> list[dict] | None:
         """Convert internal tool format to OpenAI format"""
@@ -38,7 +58,10 @@ class OpenAIProvider(Provider):
         tools: list[dict] | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream a response from OpenAI"""
-        
+
+        logger.info(f"Making OpenAI API call with model: {self.model}")
+        logger.debug(f"Messages count: {len(messages)}, Tools: {len(tools) if tools else 0}")
+
         # Build messages with system prompt
         full_messages = [{"role": "system", "content": system}]
         
@@ -83,9 +106,11 @@ class OpenAIProvider(Provider):
         
         # Track tool calls during streaming
         tool_calls_accumulator: dict[int, dict] = {}
-        
+
+        logger.info("OpenAI API request sent, awaiting response...")
         stream = await self.client.chat.completions.create(**kwargs)
-        
+        logger.info("OpenAI stream started, receiving chunks...")
+
         async for chunk in stream:
             delta = chunk.choices[0].delta if chunk.choices else None
             if not delta:

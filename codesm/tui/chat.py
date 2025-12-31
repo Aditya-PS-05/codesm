@@ -9,18 +9,34 @@ from rich.markdown import Markdown
 class ChatMessage(Static):
     """A single chat message"""
 
+    CSS = """
+    ChatMessage {
+        height: auto;
+        margin: 0 0 1 0;
+    }
+    
+    ChatMessage.user {
+        color: #5dd9c1;
+        text-style: bold;
+    }
+    
+    ChatMessage.assistant {
+        color: #ffffff;
+    }
+    """
+
     def __init__(self, role: str, content: str, **kwargs):
         super().__init__(**kwargs)
         self.role = role
         self.content = content
+        self.set_class(True, role)
 
-    def compose(self):
-        role_prefix = "You: " if self.role == "user" else "Assistant: "
+    def render(self) -> str:
         if self.role == "user":
-            yield Static(f"[bold cyan]{role_prefix}[/bold cyan]{self.content}")
+            return f"[bold cyan]You:[/bold cyan] {self.content}"
         else:
-            # Render markdown for assistant messages
-            yield Static(Markdown(self.content))
+            # For assistant, just return the content (it can be markdown)
+            return f"[bold green]Assistant:[/bold green]\n{self.content}"
 
 
 class ChatView(VerticalScroll):
