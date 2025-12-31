@@ -1,27 +1,109 @@
-"""Chat view for the TUI"""
+"""Chat view for the TUI - OpenCode style layout"""
 
-from textual.widgets import Static, Input
-from textual.containers import VerticalScroll
+from textual.widgets import Static, Input, Label
+from textual.containers import VerticalScroll, Vertical, Horizontal
 from textual import events
+from textual.reactive import reactive
 from rich.markdown import Markdown
+from rich.text import Text
+from datetime import datetime
+
+
+class UserMessage(Static):
+    """User message with left blue border - OpenCode style"""
+
+    DEFAULT_CSS = """
+    UserMessage {
+        height: auto;
+        margin: 1 0 0 0;
+        padding: 0;
+    }
+
+    UserMessage > .user-content {
+        padding: 1 2;
+        background: $surface;
+    }
+
+    UserMessage > .user-content:hover {
+        background: $panel;
+    }
+    """
+
+    def __init__(self, content: str, timestamp: datetime | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.content = content
+        self.timestamp = timestamp or datetime.now()
+        self.border_title = ""
+        self.styles.border = ("heavy", "left")
+        self.styles.border_left = ("heavy", "$secondary")
+
+    def compose(self):
+        with Vertical(classes="user-content"):
+            yield Static(self.content)
+            yield Static(
+                f"[dim]You · {self.timestamp.strftime('%H:%M')}[/dim]",
+                classes="message-meta"
+            )
+
+
+class AssistantMessage(Static):
+    """Assistant message - OpenCode style"""
+
+    DEFAULT_CSS = """
+    AssistantMessage {
+        height: auto;
+        margin: 1 0 0 0;
+        padding: 1 2;
+    }
+
+    AssistantMessage .message-meta {
+        margin-top: 1;
+    }
+    """
+
+    def __init__(
+        self,
+        content: str,
+        model: str = "",
+        duration: float | None = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.content = content
+        self.model = model
+        self.duration = duration
+
+    def compose(self):
+        yield Static(Markdown(self.content))
+        meta_parts = ["[#5dd9c1]▣[/]", "[dim]Assistant[/dim]"]
+        if self.model:
+            meta_parts.append(f"[dim]· {self.model}[/dim]")
+        if self.duration:
+            meta_parts.append(f"[dim]· {self.duration:.1f}s[/dim]")
+        yield Static(" ".join(meta_parts), classes="message-meta")
 
 
 class ChatMessage(Static):
-    """A single chat message"""
+    """Legacy chat message for compatibility"""
 
-    CSS = """
+    DEFAULT_CSS = """
     ChatMessage {
         height: auto;
-        margin: 0 0 1 0;
+        margin: 1 0 0 0;
+        padding: 1 2;
     }
-    
+
     ChatMessage.user {
-        color: #5dd9c1;
-        text-style: bold;
+        border-left: heavy #5dd9c1;
+        background: $surface;
     }
-    
+
+    ChatMessage.user:hover {
+        background: $panel;
+    }
+
     ChatMessage.assistant {
-        color: #ffffff;
+        background: transparent;
     }
     """
 
@@ -33,14 +115,235 @@ class ChatMessage(Static):
 
     def render(self) -> str:
         if self.role == "user":
-            return f"[bold cyan]You:[/bold cyan] {self.content}"
+            return f"{self.content}\n[dim]You[/dim]"
         else:
-            # For assistant, just return the content (it can be markdown)
-            return f"[bold green]Assistant:[/bold green]\n{self.content}"
+            return f"{self.content}\n[#5dd9c1]▣[/] [dim]Assistant[/dim]"
+
+
+class ContextSidebar(Static):
+    """Right sidebar showing context, tokens, cost - OpenCode style"""
+
+    DEFAULT_CSS = """
+    ContextSidebar {
+        width: 42;
+        height: 100%;
+        background: $surface;
+        padding: 1 2;
+        border-left: solid $primary;
+    }
+
+    ContextSidebar .sidebar-section {
+        margin-bottom: 1;
+    }
+
+    ContextSidebar .sidebar-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    ContextSidebar .sidebar-value {
+        color: $text-muted;
+    }
+
+    ContextSidebar .sidebar-footer {
+        dock: bottom;
+        height: auto;
+        border-top: solid $primary;
+        padding-top: 1;
+    }
+    """
+
+    tokens = reactive(0)
+    context_pct = reactive(0)
+    cost = reactive(0.0)
+    session_title = reactive("New Session")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.working_dir = "~/"
+        self.version = "codesm 0.1.0"
+
+    def compose(self):
+        with Vertical():
+            yield Static(f"[bold]{self.session_title}[/]", id="sidebar-title")
+            yield Static("")
+            
+            with Vertical(classes="sidebar-section"):
+                yield Static("[bold]Context[/]", classes="sidebar-title")
+                yield Static(f"{self.tokens:,} tokens", id="token-count", classes="sidebar-value")
+                yield Static(f"{self.context_pct}% used", id="context-pct", classes="sidebar-value")
+                yield Static(f"${self.cost:.2f} spent", id="cost-display", classes="sidebar-value")
+            
+            yield Static("")
+            
+            with Vertical(classes="sidebar-section"):
+                yield Static("[bold]LSP[/]", classes="sidebar-title")
+                yield Static("[dim]No active servers[/dim]", id="lsp-status", classes="sidebar-value")
+            
+            yield Static("")
+            
+            with Vertical(classes="sidebar-footer"):
+                yield Static(f"[dim]{self.working_dir}[/dim]", id="working-dir")
+                yield Static(f"[dim]{self.version}[/dim]", id="version-info")
+
+    def update_context(self, tokens: int, context_pct: int, cost: float):
+        """Update context information"""
+        self.tokens = tokens
+        self.context_pct = context_pct
+        self.cost = cost
+        try:
+            self.query_one("#token-count", Static).update(f"{tokens:,} tokens")
+            self.query_one("#context-pct", Static).update(f"{context_pct}% used")
+            self.query_one("#cost-display", Static).update(f"${cost:.2f} spent")
+        except Exception:
+            pass
+
+    def update_title(self, title: str):
+        """Update session title"""
+        self.session_title = title
+        try:
+            self.query_one("#sidebar-title", Static).update(f"[bold]{title}[/]")
+        except Exception:
+            pass
+
+    def update_working_dir(self, path: str):
+        """Update working directory display"""
+        self.working_dir = path
+        try:
+            self.query_one("#working-dir", Static).update(f"[dim]{path}[/dim]")
+        except Exception:
+            pass
+
+
+class PromptInput(Vertical):
+    """Input component with status bar - OpenCode style"""
+
+    DEFAULT_CSS = """
+    PromptInput {
+        height: auto;
+        background: $surface;
+        padding: 1;
+    }
+
+    PromptInput #input-wrapper {
+        border: heavy left $secondary;
+        padding: 0 1;
+        background: $surface;
+    }
+
+    PromptInput #prompt-input {
+        border: none;
+        background: transparent;
+        width: 1fr;
+    }
+
+    PromptInput #prompt-input:focus {
+        border: none;
+    }
+
+    PromptInput #input-status-bar {
+        height: 1;
+        padding: 0 1;
+    }
+
+    PromptInput #agent-indicator {
+        width: auto;
+    }
+
+    PromptInput #model-indicator {
+        width: auto;
+        text-align: right;
+    }
+
+    PromptInput #hint-bar {
+        height: 1;
+        margin-top: 1;
+    }
+
+    PromptInput .hint-left {
+        width: 1fr;
+    }
+
+    PromptInput .hint-right {
+        width: auto;
+        text-align: right;
+    }
+    """
+
+    def __init__(
+        self,
+        placeholder: str = "Ask anything...",
+        model: str = "",
+        agent: str = "Build",
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self._placeholder = placeholder
+        self._model = model
+        self._agent = agent
+        self._is_processing = False
+
+    def compose(self):
+        with Vertical(id="input-wrapper"):
+            yield Input(placeholder=self._placeholder, id="prompt-input")
+            with Horizontal(id="input-status-bar"):
+                yield Static(
+                    f"[bold #5dd9c1]{self._agent}[/]",
+                    id="agent-indicator"
+                )
+                yield Static("", classes="spacer")
+                yield Static(
+                    f"[dim]{self._model}[/dim]",
+                    id="model-indicator"
+                )
+        
+        with Horizontal(id="hint-bar"):
+            yield Static("", id="status-text", classes="hint-left")
+            yield Static(
+                "[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands",
+                classes="hint-right"
+            )
+
+    def get_input(self) -> Input:
+        """Get the input widget"""
+        return self.query_one("#prompt-input", Input)
+
+    def set_model(self, model: str):
+        """Update model display"""
+        self._model = model
+        try:
+            self.query_one("#model-indicator", Static).update(f"[dim]{model}[/dim]")
+        except Exception:
+            pass
+
+    def set_agent(self, agent: str):
+        """Update agent display"""
+        self._agent = agent
+        try:
+            self.query_one("#agent-indicator", Static).update(
+                f"[bold #5dd9c1]{agent}[/]"
+            )
+        except Exception:
+            pass
+
+    def set_processing(self, processing: bool, message: str = ""):
+        """Set processing state with optional message"""
+        self._is_processing = processing
+        try:
+            status = self.query_one("#status-text", Static)
+            hint = self.query_one(".hint-right", Static)
+            if processing:
+                status.update(f"[dim]⠋ {message}[/dim]" if message else "[dim]⠋ Thinking...[/dim]")
+                hint.update("[dim]esc[/dim] to interrupt")
+            else:
+                status.update("")
+                hint.update("[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands")
+        except Exception:
+            pass
 
 
 class ChatView(VerticalScroll):
-    """Chat conversation view"""
+    """Chat conversation view - legacy compatibility"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -60,7 +363,7 @@ class ChatView(VerticalScroll):
 
 
 class ChatInput(Input):
-    """Input field for chat messages"""
+    """Input field for chat messages - legacy compatibility"""
 
     def __init__(self, **kwargs):
         super().__init__(placeholder="Type your message...", **kwargs)

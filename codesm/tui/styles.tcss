@@ -1,10 +1,99 @@
-/* Textual CSS styles for codesm TUI */
+/* Textual CSS styles for codesm TUI - OpenCode inspired */
 
 Screen {
+    background: $background;
+}
+
+/* Context Sidebar styles */
+ContextSidebar {
+    width: 42;
+    height: 100%;
+    background: $surface;
+    padding: 1 2;
+    border-left: solid $primary;
+}
+
+ContextSidebar .sidebar-section {
+    margin-bottom: 1;
+}
+
+ContextSidebar .sidebar-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+ContextSidebar .sidebar-value {
+    color: $text-muted;
+}
+
+ContextSidebar .sidebar-footer {
+    dock: bottom;
+    height: auto;
+    border-top: solid $primary;
+    padding-top: 1;
+}
+
+/* Chat view styles */
+ChatView {
+    background: $background;
+    padding: 1;
+}
+
+/* Message styles - OpenCode inspired */
+ChatMessage {
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+ChatMessage.user {
+    border-left: heavy $secondary;
+    padding: 1 2;
     background: $surface;
 }
 
-/* Sidebar styles */
+ChatMessage.user:hover {
+    background: $panel;
+}
+
+ChatMessage.assistant {
+    padding: 1 2;
+    background: transparent;
+}
+
+/* Input styles */
+ChatInput {
+    dock: bottom;
+    border-top: solid $primary;
+}
+
+Input {
+    width: 100%;
+    height: 3;
+}
+
+/* Prompt input styles */
+PromptInput {
+    height: auto;
+    background: $surface;
+    padding: 1;
+}
+
+PromptInput #input-wrapper {
+    border-left: heavy $secondary;
+    padding: 0 1;
+    background: $surface;
+}
+
+PromptInput #prompt-input {
+    border: none;
+    background: transparent;
+}
+
+PromptInput #prompt-input:focus {
+    border: none;
+}
+
+/* Legacy sidebar styles */
 Sidebar {
     width: 30;
     background: $panel;
@@ -40,34 +129,4 @@ SessionListItem:hover {
 SessionListItem.-selected {
     background: $primary;
     text-style: bold;
-}
-
-/* Chat view styles */
-ChatView {
-    background: $surface;
-    padding: 1;
-}
-
-ChatMessage {
-    margin: 1 0;
-    padding: 1;
-}
-
-ChatMessage.-user {
-    background: $primary-darken-3;
-}
-
-ChatMessage.-assistant {
-    background: $surface-darken-1;
-}
-
-/* Input styles */
-ChatInput {
-    dock: bottom;
-    border-top: solid $primary;
-}
-
-Input {
-    width: 100%;
-    height: 3;
 }

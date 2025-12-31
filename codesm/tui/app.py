@@ -1,4 +1,4 @@
-"""Terminal UI for codesm"""
+"""Terminal UI for codesm - OpenCode style layout"""
 
 from pathlib import Path
 import logging
@@ -13,7 +13,7 @@ from .themes import THEMES, get_next_theme
 from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
-from .chat import ChatMessage
+from .chat import ChatMessage, ContextSidebar, PromptInput
 from codesm.auth import ClaudeOAuth
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ VERSION = "0.1.0"
 
 
 class CodesmApp(App):
-    """Main TUI application"""
+    """Main TUI application - OpenCode style"""
 
     CSS = """
     Screen {
@@ -41,8 +41,16 @@ class CodesmApp(App):
     #main-container {
         width: 100%;
         height: 100%;
+        layout: horizontal;
     }
 
+    #content-area {
+        width: 1fr;
+        height: 100%;
+        layout: vertical;
+    }
+
+    /* Welcome view styles */
     #welcome-view {
         width: 100%;
         height: 100%;
@@ -66,7 +74,7 @@ class CodesmApp(App):
         width: 80;
         height: auto;
         align: center middle;
-        border-left: tall $primary;
+        border-left: heavy $secondary;
         background: $surface;
         padding: 0 1;
     }
@@ -95,15 +103,13 @@ class CodesmApp(App):
         padding-top: 2;
     }
 
-    .hint-key {
-        text-style: bold;
-        color: $foreground;
-    }
-
+    /* Chat view styles */
     #chat-view {
         width: 100%;
         height: 100%;
-        layout: vertical;
+        layout: grid;
+        grid-size: 1 2;
+        grid-rows: 1fr auto;
     }
 
     .hidden {
@@ -112,9 +118,10 @@ class CodesmApp(App):
 
     #chat-container {
         width: 100%;
-        height: 1fr;
+        height: 100%;
         background: $background;
         border: none;
+        row-span: 1;
     }
 
     #messages {
@@ -124,74 +131,113 @@ class CodesmApp(App):
         background: $background;
     }
 
-    .message-user {
-        color: $secondary;
-        text-style: bold;
+    /* Message styles - OpenCode inspired */
+    ChatMessage.user {
+        border-left: heavy $secondary;
+        padding: 1 2;
         margin: 1 0 0 0;
-        width: 100%;
+        background: $surface;
     }
 
-    .message-assistant {
-        color: $foreground;
+    ChatMessage.user:hover {
+        background: $panel;
+    }
+
+    ChatMessage.assistant {
+        padding: 1 2;
         margin: 1 0 0 0;
-        width: 100%;
     }
 
     .message-separator {
         color: $text-muted;
         margin: 1 0;
+        height: 0;
     }
 
+    /* Chat input section - OpenCode style */
     #chat-input-section {
         height: auto;
         width: 100%;
         background: $surface;
-        border-top: tall $primary;
         padding: 1;
+        row-span: 1;
     }
 
-    #chat-input-container {
-        width: 100%;
-        height: auto;
-        layout: horizontal;
-        border-left: tall $primary;
-        background: $surface;
+    #chat-input-wrapper {
+        border-left: heavy $secondary;
         padding: 0 1;
+        background: $surface;
     }
 
     #chat-message-input {
         width: 1fr;
-        height: auto;
         border: none;
-        background: $surface;
+        background: transparent;
         color: $foreground;
+    }
+
+    #chat-message-input:focus {
+        border: none;
+    }
+
+    #chat-status-bar {
+        height: 1;
+        padding: 0 1;
+    }
+
+    #chat-agent-indicator {
+        width: auto;
+        color: $secondary;
+        text-style: bold;
     }
 
     #chat-model-indicator {
         width: auto;
-        height: auto;
-        color: $secondary;
-        padding: 0 1;
-        text-align: right;
-    }
-
-    #status-bar {
-        dock: bottom;
-        height: 1;
-        background: $surface;
         color: $text-muted;
-        padding: 0 1;
     }
 
-    .user-message {
-        color: $secondary;
+    #chat-hint-bar {
+        height: 1;
+        margin-top: 1;
+    }
+
+    #chat-status-text {
+        width: 1fr;
+    }
+
+    #chat-hints {
+        width: auto;
+        text-align: right;
+        color: $text-muted;
+    }
+
+    /* Right sidebar */
+    #context-sidebar {
+        width: 42;
+        height: 100%;
+        background: $surface;
+        padding: 1 2;
+        border-left: solid $primary;
+    }
+
+    #context-sidebar .sidebar-section {
+        margin-bottom: 1;
+    }
+
+    #context-sidebar .sidebar-title {
         text-style: bold;
-        margin: 1 0;
+        margin-bottom: 1;
     }
 
-    .assistant-message {
-        color: $success;
-        margin: 1 0;
+    #context-sidebar .sidebar-value {
+        color: $text-muted;
+    }
+
+    #context-sidebar .sidebar-footer {
+        dock: bottom;
+        height: auto;
+        border-top: solid $primary;
+        padding-top: 1;
     }
     """
 
@@ -202,6 +248,7 @@ class CodesmApp(App):
         Binding("ctrl+a", "connect_provider", "Connect Provider", show=True),
         Binding("ctrl+t", "toggle_theme", "Theme", show=True),
         Binding("ctrl+p", "show_command_palette", "Commands", show=True),
+        Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False),
     ]
 
     def __init__(self, directory: Path, model: str, session_id: str | None = None):
@@ -214,38 +261,51 @@ class CodesmApp(App):
         self._theme_name = "dark"
         self._showing_palette = False
         self._claude_oauth = ClaudeOAuth()
+        self._sidebar_visible = True
+        self._total_tokens = 0
+        self._total_cost = 0.0
 
     def compose(self) -> ComposeResult:
         with Container(id="main-container"):
-            with Vertical(id="welcome-view"):
-                yield Center(Static(LOGO, id="logo"))
-                yield Center(Static(VERSION, id="version"))
-                with Center():
-                    with Vertical(id="input-container"):
-                        yield Input(
-                            placeholder="Build anything...",
-                            id="message-input"
+            with Vertical(id="content-area"):
+                with Vertical(id="welcome-view"):
+                    yield Center(Static(LOGO, id="logo"))
+                    yield Center(Static(VERSION, id="version"))
+                    with Center():
+                        with Vertical(id="input-container"):
+                            yield Input(
+                                placeholder="Build anything...",
+                                id="message-input"
+                            )
+                            yield Static(f"[bold #5dd9c1]Build[/]  {self._short_model_name()}", id="model-indicator")
+                    yield Center(
+                        Static(
+                            "[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands",
+                            id="hints"
                         )
-                        yield Static(f"Build  {self._short_model_name()}", id="model-indicator")
-                yield Center(
-                    Static(
-                        "[bold]tab[/] switch agent  [bold]ctrl+p[/] commands",
-                        id="hints"
                     )
-                )
 
-            with Vertical(id="chat-view", classes="hidden"):
-                with VerticalScroll(id="chat-container"):
-                    yield Vertical(id="messages")
-                with Vertical(id="chat-input-section"):
-                    with Horizontal(id="chat-input-container"):
-                        yield Input(
-                            placeholder="Continue the conversation...",
-                            id="chat-message-input"
-                        )
-                        yield Static(f"{self._short_model_name()}", id="chat-model-indicator")
+                with Container(id="chat-view", classes="hidden"):
+                    with VerticalScroll(id="chat-container"):
+                        yield Vertical(id="messages")
+                    
+                    with Vertical(id="chat-input-section"):
+                        with Vertical(id="chat-input-wrapper"):
+                            yield Input(
+                                placeholder="Ask anything...",
+                                id="chat-message-input"
+                            )
+                            with Horizontal(id="chat-status-bar"):
+                                yield Static("[bold #5dd9c1]Build[/]", id="chat-agent-indicator")
+                                yield Static("", id="chat-spacer")
+                                yield Static(f"[dim]{self._short_model_name()}[/dim]", id="chat-model-indicator")
+                        
+                        with Horizontal(id="chat-hint-bar"):
+                            yield Static("", id="chat-status-text")
+                            yield Static("[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands", id="chat-hints")
 
-            yield Static(f"~/{self.directory}", id="status-bar")
+            yield ContextSidebar(id="context-sidebar", classes="hidden")
+
         yield Footer()
 
     def _short_model_name(self) -> str:
@@ -269,6 +329,13 @@ class CodesmApp(App):
 
         from codesm.agent.agent import Agent
         from codesm.session.session import Session
+        
+        # Update sidebar with working directory
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            sidebar.update_working_dir(f"~/{self.directory}")
+        except Exception:
+            pass
         
         # Load previous session if session_id was provided, otherwise create new
         if self.session_id:
@@ -434,8 +501,6 @@ class CodesmApp(App):
         else:
             self._get_active_input().focus()
 
-
-
     async def on_input_submitted(self, event: Input.Submitted):
         """Handle message submission"""
         message = event.value.strip()
@@ -459,6 +524,9 @@ class CodesmApp(App):
         chat_input.value = ""
         chat_input.disabled = True
 
+        # Update status to show processing
+        self._set_processing_state(True, "Thinking...")
+
         messages_container = self.query_one("#messages", Vertical)
         logger.info(f"Messages container children count: {len(messages_container.children)}")
 
@@ -466,18 +534,16 @@ class CodesmApp(App):
         user_msg = ChatMessage("user", message)
         messages_container.mount(user_msg)
 
-        # Add thinking indicator
-        thinking = Static("[dim]Thinking...[/dim]", id="thinking-indicator")
-        messages_container.mount(thinking)
-
         # Scroll to bottom to show latest messages
         chat_container = self.query_one("#chat-container", VerticalScroll)
-        # Force a refresh to ensure scroll position is updated
         self.call_later(lambda: chat_container.scroll_end(animate=False))
 
-        logger.info("Mounted user message and thinking indicator")
+        logger.info("Mounted user message")
 
         # Process chat
+        import time
+        start_time = time.time()
+        
         try:
             logger.info(f"Processing message: {message[:50]}")
             logger.info(f"Using model: {self.model}")
@@ -485,45 +551,34 @@ class CodesmApp(App):
             response_text = ""
 
             async for chunk in self.agent.chat(message):
-                # chunk is a StreamChunk object, extract the content
                 if hasattr(chunk, 'content'):
                     response_text += chunk.content
                     logger.debug(f"Received chunk of type {chunk.type}: {chunk.content[:50] if chunk.content else 'empty'}...")
                 else:
-                    # Fallback in case it's a string (shouldn't happen)
                     response_text += str(chunk)
 
-            # Remove thinking indicator
-            thinking.remove()
+            duration = time.time() - start_time
 
             # Add assistant response
             if response_text:
                 logger.info(f"Got response, length: {len(response_text)}")
                 assistant_msg = ChatMessage("assistant", response_text)
                 messages_container.mount(assistant_msg)
+                
+                # Update sidebar with token/cost estimates
+                self._update_context_info(message, response_text)
             else:
                 logger.warning("No response received")
                 error_msg = ChatMessage("assistant", "No response received")
                 messages_container.mount(error_msg)
 
-            # Add separator
-            separator = Static("[dim]" + "─" * 40 + "[/dim]", classes="message-separator")
-            messages_container.mount(separator)
-
-            # Scroll to bottom to show latest response
-            # Force a refresh to ensure scroll position is updated
+            # Scroll to bottom
             self.call_later(lambda: chat_container.scroll_end(animate=False))
 
             logger.info(f"Messages container now has {len(messages_container.children)} children")
 
         except Exception as e:
             logger.error(f"Error in chat: {e}", exc_info=True)
-
-            # Remove thinking indicator if it exists
-            try:
-                thinking.remove()
-            except:
-                pass
 
             # Add error message
             error_msg = str(e)
@@ -537,9 +592,46 @@ class CodesmApp(App):
             self.notify(f"Error: {error_msg[:80]}")
 
         finally:
-            # Re-enable input
+            # Re-enable input and reset status
+            self._set_processing_state(False)
             chat_input.disabled = False
             chat_input.focus()
+
+    def _set_processing_state(self, processing: bool, message: str = ""):
+        """Update UI to show processing state"""
+        try:
+            status_text = self.query_one("#chat-status-text", Static)
+            hints = self.query_one("#chat-hints", Static)
+            
+            if processing:
+                status_text.update(f"[dim]⠋ {message}[/dim]")
+                hints.update("[dim]esc[/dim] to interrupt")
+            else:
+                status_text.update("")
+                hints.update("[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands")
+        except Exception:
+            pass
+
+    def _update_context_info(self, user_msg: str, assistant_msg: str):
+        """Update sidebar with token and cost estimates"""
+        # Rough token estimation (4 chars per token)
+        user_tokens = len(user_msg) // 4
+        assistant_tokens = len(assistant_msg) // 4
+        self._total_tokens += user_tokens + assistant_tokens
+        
+        # Rough cost estimation
+        input_cost = user_tokens * 0.000003  # $3 per 1M tokens
+        output_cost = assistant_tokens * 0.000015  # $15 per 1M tokens
+        self._total_cost += input_cost + output_cost
+        
+        # Context percentage (assuming 128k context window)
+        context_pct = min(int((self._total_tokens / 128000) * 100), 100)
+        
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            sidebar.update_context(self._total_tokens, context_pct, self._total_cost)
+        except Exception:
+            pass
 
     def _display_session_messages(self, messages: list[dict]):
         """Display loaded session messages in the chat area"""
@@ -555,11 +647,7 @@ class CodesmApp(App):
                 msg_widget = ChatMessage(role, content)
                 messages_container.mount(msg_widget)
         
-        # Add separator after previous messages if any exist
         if messages:
-            separator = Static("[dim]" + "─" * 40 + "[/dim]", classes="message-separator")
-            messages_container.mount(separator)
-            # Scroll to bottom
             chat_container.scroll_end(animate=False)
         
         logger.info(f"Displayed {len(messages)} previous messages")
@@ -569,6 +657,14 @@ class CodesmApp(App):
         self.in_chat = True
         self.query_one("#welcome-view").add_class("hidden")
         self.query_one("#chat-view").remove_class("hidden")
+        
+        # Show sidebar in chat view
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            sidebar.remove_class("hidden")
+            self._sidebar_visible = True
+        except Exception:
+            pass
 
         logger.info(f"Switched to chat view, messages container has {len(self.query_one('#messages', Vertical).children)} children")
 
@@ -579,6 +675,15 @@ class CodesmApp(App):
         self.in_chat = False
         self.query_one("#welcome-view").remove_class("hidden")
         self.query_one("#chat-view").add_class("hidden")
+        
+        # Hide sidebar in welcome view
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            sidebar.add_class("hidden")
+            self._sidebar_visible = False
+        except Exception:
+            pass
+        
         self.query_one("#message-input", Input).focus()
 
     async def _show_model_selector(self):
@@ -594,21 +699,32 @@ class CodesmApp(App):
         """Update model display in UI"""
         short_name = self._short_model_name()
 
-        # Add provider prefix for clarity
-        if "/" in self.model:
-            provider, _ = self.model.split("/", 1)
-            display_name = f"[{provider.upper()}] {short_name}"
-        else:
-            display_name = short_name
-
-        self.query_one("#model-indicator", Static).update(f"Build  {display_name}")
-        self.query_one("#chat-model-indicator", Static).update(display_name)
+        # Update welcome screen
+        self.query_one("#model-indicator", Static).update(f"[bold #5dd9c1]Build[/]  {short_name}")
+        
+        # Update chat screen
+        try:
+            self.query_one("#chat-model-indicator", Static).update(f"[dim]{short_name}[/dim]")
+        except Exception:
+            pass
 
     def action_toggle_theme(self):
         """Toggle between themes"""
         self._theme_name = get_next_theme(self._theme_name)
         self.theme = f"codesm-{self._theme_name}"
         self.notify(f"Theme: {self._theme_name}")
+
+    def action_toggle_sidebar(self):
+        """Toggle sidebar visibility"""
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            self._sidebar_visible = not self._sidebar_visible
+            if self._sidebar_visible:
+                sidebar.remove_class("hidden")
+            else:
+                sidebar.add_class("hidden")
+        except Exception:
+            pass
 
     async def action_connect_provider(self):
         """Show connect provider modal"""
@@ -622,11 +738,20 @@ class CodesmApp(App):
         from codesm.session.session import Session
         if self.agent:
             self.agent.session = Session.create(self.directory)
+        
+        # Reset token/cost tracking
+        self._total_tokens = 0
+        self._total_cost = 0.0
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            sidebar.update_context(0, 0, 0.0)
+            sidebar.update_title("New Session")
+        except Exception:
+            pass
+        
         if self.in_chat:
             messages = self.query_one("#messages", Vertical)
             messages.remove_children()
-            new_session_msg = Static("[bold green]New session started[/]", classes="message-separator")
-            messages.mount(new_session_msg)
         self._switch_to_welcome()
         self.notify("New session started")
 
@@ -636,8 +761,6 @@ class CodesmApp(App):
         if self.in_chat:
             messages = self.query_one("#messages", Vertical)
             messages.remove_children()
-            cleared_msg = Static("[bold yellow]Display cleared[/]", classes="message-separator")
-            messages.mount(cleared_msg)
 
     def action_show_command_palette(self):
         """Show command palette via Ctrl+P"""
