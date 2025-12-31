@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from codesm.storage.storage import Storage
+from codesm.session.title import create_default_title, is_default_title, generate_title_sync
 
 
 @dataclass
@@ -15,18 +16,20 @@ class Session:
     
     id: str
     directory: Path
-    title: str = "New Session"
+    title: str = field(default_factory=create_default_title)
     messages: list[dict] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    _title_generated: bool = field(default=False, repr=False)
     
     @classmethod
-    def create(cls, directory: Path) -> "Session":
+    def create(cls, directory: Path, is_child: bool = False) -> "Session":
         """Create a new session"""
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         session = cls(
             id=session_id,
             directory=Path(directory).resolve(),
+            title=create_default_title(is_child),
         )
         session.save()
         return session
@@ -37,13 +40,18 @@ class Session:
         data = Storage.read(["session", session_id])
         if not data:
             return None
+        title = data.get("title", "New Session")
+        messages = data.get("messages", [])
+        # If session has messages, title was already generated
+        has_user_message = any(m.get("role") == "user" for m in messages)
         return cls(
             id=data["id"],
             directory=Path(data["directory"]),
-            title=data.get("title", "New Session"),
-            messages=data.get("messages", []),
+            title=title,
+            messages=messages,
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
+            _title_generated=has_user_message,
         )
     
     @classmethod
@@ -81,6 +89,13 @@ class Session:
         # Preserve tool_call_id, name, tool_calls, etc.
         msg.update(kwargs)
         self.messages.append(msg)
+        
+        # Auto-generate title from first user message if still default
+        if role == "user" and content and not self._title_generated:
+            if is_default_title(self.title):
+                self.title = generate_title_sync(content)
+            self._title_generated = True
+        
         self.save()
     
     def get_messages(self) -> list[dict]:

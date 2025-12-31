@@ -574,8 +574,9 @@ class CodesmApp(App):
                 assistant_msg = ChatMessage("assistant", response_text)
                 messages_container.mount(assistant_msg)
                 
-                # Update sidebar with token/cost estimates
+                # Update sidebar with token/cost estimates and session title
                 self._update_context_info(message, response_text)
+                self._update_sidebar_title()
             else:
                 logger.warning("No response received")
                 error_msg = ChatMessage("assistant", "No response received")
@@ -618,6 +619,15 @@ class CodesmApp(App):
             else:
                 status_text.update("")
                 hints.update("[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands")
+        except Exception:
+            pass
+
+    def _update_sidebar_title(self):
+        """Update sidebar with current session title"""
+        try:
+            if self.agent and self.agent.session:
+                sidebar = self.query_one("#context-sidebar", ContextSidebar)
+                sidebar.update_title(self.agent.session.title)
         except Exception:
             pass
 
