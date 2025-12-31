@@ -739,6 +739,165 @@ class ClaudeOAuthModal(ModalScreen):
         self.dismiss(None)
 
 
+class ThemeSelectModal(ModalScreen):
+    """Modal for selecting a theme"""
+
+    CSS = """
+    ThemeSelectModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    #modal-container {
+        width: 60;
+        height: auto;
+        max-height: 80%;
+        background: $surface;
+        border: tall $primary;
+        padding: 1 2;
+    }
+
+    #modal-header {
+        height: 3;
+        width: 100%;
+    }
+
+    #modal-title {
+        text-style: bold;
+    }
+
+    #esc-hint {
+        dock: right;
+        color: $text-muted;
+    }
+
+    #search-input {
+        margin: 1 0;
+        border: tall $primary;
+        background: $panel;
+    }
+
+    #search-input:focus {
+        border: tall $accent;
+    }
+
+    #theme-list {
+        height: auto;
+        max-height: 20;
+        padding: 0;
+    }
+
+    .group-header {
+        color: $accent;
+        text-style: bold;
+        padding: 1 0 0 0;
+    }
+
+    ModalListItem {
+        height: 1;
+        padding: 0;
+    }
+
+    ModalListItem.-selected {
+        background: #e5a07b;
+        color: #1e1e2e;
+    }
+
+    ModalListItem.-selected .item-content {
+        color: #1e1e2e;
+        text-style: bold;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss_modal", "Close", show=False),
+        Binding("up", "move_up", "Up", show=False),
+        Binding("down", "move_down", "Down", show=False),
+        Binding("enter", "select", "Select", show=False),
+    ]
+
+    def __init__(self, current_theme: str = "dark"):
+        super().__init__()
+        self.current_theme = current_theme
+        self.selected_index = 0
+        self.visible_items: list[ModalListItem] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-container"):
+            with Horizontal(id="modal-header"):
+                yield Static("Select theme", id="modal-title")
+                yield Static("esc", id="esc-hint")
+            yield Input(placeholder="Search themes...", id="search-input")
+            yield VerticalScroll(id="theme-list")
+
+    def on_mount(self):
+        self._build_list()
+        self.query_one("#search-input", Input).focus()
+
+    def _build_list(self, filter_text: str = ""):
+        from .themes import THEME_DEFINITIONS
+        
+        container = self.query_one("#theme-list", VerticalScroll)
+        container.remove_children()
+        self.visible_items = []
+
+        filter_lower = filter_text.lower()
+
+        for category, themes in THEME_DEFINITIONS.items():
+            filtered_themes = [
+                t for t in themes
+                if filter_lower in t["display"].lower() or filter_lower in t["name"].lower()
+            ] if filter_text else themes
+
+            if not filtered_themes:
+                continue
+
+            container.mount(Static(category, classes="group-header"))
+
+            for theme in filtered_themes:
+                is_current = theme["name"] == self.current_theme
+                hint = "✓ current" if is_current else ""
+                item = ModalListItem(theme["name"], theme["display"], hint)
+                container.mount(item)
+                self.visible_items.append(item)
+
+        if self.visible_items:
+            self.selected_index = 0
+            self.visible_items[0].set_selected(True)
+
+    def on_input_changed(self, event: Input.Changed):
+        if event.input.id == "search-input":
+            self._build_list(event.value)
+
+    def on_input_submitted(self, event: Input.Submitted):
+        if event.input.id == "search-input":
+            self.action_select()
+
+    def action_move_up(self):
+        if not self.visible_items:
+            return
+        self.visible_items[self.selected_index].set_selected(False)
+        self.selected_index = (self.selected_index - 1) % len(self.visible_items)
+        self.visible_items[self.selected_index].set_selected(True)
+        self.visible_items[self.selected_index].scroll_visible()
+
+    def action_move_down(self):
+        if not self.visible_items:
+            return
+        self.visible_items[self.selected_index].set_selected(False)
+        self.selected_index = (self.selected_index + 1) % len(self.visible_items)
+        self.visible_items[self.selected_index].set_selected(True)
+        self.visible_items[self.selected_index].scroll_visible()
+
+    def action_select(self):
+        if self.visible_items:
+            selected = self.visible_items[self.selected_index]
+            self.dismiss(selected.item_id)
+
+    def action_dismiss_modal(self):
+        self.dismiss(None)
+
+
 class APIKeyInputModal(ModalScreen):
     """Modal for manually entering API key"""
 

@@ -10,7 +10,7 @@ from textual.widgets import Footer, Input, Static, RichLog, Markdown
 from textual.binding import Binding
 
 from .themes import THEMES, get_next_theme
-from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal
+from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal, ThemeSelectModal
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
@@ -381,7 +381,7 @@ class CodesmApp(App):
         if cmd == "/models":
             self.push_screen(ModelSelectModal(self.model), self._on_model_selected)
         elif cmd == "/theme":
-            self.action_toggle_theme()
+            self.push_screen(ThemeSelectModal(self._theme_name), self._on_theme_selected)
         elif cmd == "/new":
             self.action_new_session()
         elif cmd == "/connect":
@@ -400,6 +400,15 @@ class CodesmApp(App):
             self.notify("Editor (coming soon)")
         else:
             self.notify(f"Unknown command: {cmd}")
+
+    def _on_theme_selected(self, result: str | None):
+        """Handle theme selection from modal"""
+        if result:
+            self._theme_name = result
+            self.theme = f"codesm-{result}"
+            from .themes import get_theme_display_name
+            self.notify(f"Theme: {get_theme_display_name(result)}")
+        self._get_active_input().focus()
 
     def _on_session_selected(self, result: str | None):
         """Handle session selection"""
