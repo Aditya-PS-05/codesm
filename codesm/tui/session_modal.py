@@ -56,16 +56,18 @@ class SessionListModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
@@ -95,8 +97,8 @@ class SessionListModal(ModalScreen):
     }
 
     #modal-footer {
-        height: 2;
-        padding: 1 0 0 0;
+        height: 1;
+        margin-top: 1;
         color: $text-muted;
     }
 

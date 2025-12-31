@@ -92,27 +92,29 @@ class ModelSelectModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
     #search-input {
-        margin: 1 0;
-        border: tall $primary;
+        margin-bottom: 1;
+        border: tall $secondary;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $accent;
+        border: tall $secondary;
     }
 
     #model-list {
@@ -122,7 +124,7 @@ class ModelSelectModal(ModalScreen):
     }
 
     .group-header {
-        color: $accent;
+        color: $secondary;
         text-style: bold;
         padding: 1 0 0 0;
     }
@@ -143,8 +145,8 @@ class ModelSelectModal(ModalScreen):
     }
 
     #modal-footer {
-        height: 2;
-        padding: 1 0 0 0;
+        height: 1;
+        margin-top: 1;
         color: $text-muted;
     }
 
@@ -273,27 +275,29 @@ class ProviderConnectModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
     #search-input {
-        margin: 1 0;
-        border: tall $primary;
+        margin-bottom: 1;
+        border: tall $secondary;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $accent;
+        border: tall $secondary;
     }
 
     #provider-list {
@@ -303,7 +307,7 @@ class ProviderConnectModal(ModalScreen):
     }
 
     .group-header {
-        color: $accent;
+        color: $secondary;
         text-style: bold;
         padding: 1 0 0 0;
     }
@@ -493,27 +497,29 @@ class AuthMethodModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
     #search-input {
-        margin: 1 0;
-        border: tall $primary;
+        margin-bottom: 1;
+        border: tall $secondary;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $accent;
+        border: tall $secondary;
     }
 
     #method-list {
@@ -634,22 +640,23 @@ class ClaudeOAuthModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
         color: $secondary;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
     #instructions {
-        padding: 1 0;
         color: $text-muted;
     }
 
@@ -662,16 +669,16 @@ class ClaudeOAuthModal(ModalScreen):
 
     #code-input {
         margin: 1 0;
-        border: tall $primary;
+        border: tall $secondary;
         background: $panel;
     }
 
     #code-input:focus {
-        border: tall $accent;
+        border: tall $secondary;
     }
 
     #footer-hint {
-        padding: 1 0;
+        margin-top: 1;
         color: $text-muted;
     }
     """
@@ -758,27 +765,29 @@ class ThemeSelectModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
     #search-input {
-        margin: 1 0;
-        border: tall $primary;
+        margin-bottom: 1;
+        border: tall $secondary;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $accent;
+        border: tall $secondary;
     }
 
     #theme-list {
@@ -788,7 +797,7 @@ class ThemeSelectModal(ModalScreen):
     }
 
     .group-header {
-        color: $accent;
+        color: $secondary;
         text-style: bold;
         padding: 1 0 0 0;
     }
@@ -916,36 +925,37 @@ class APIKeyInputModal(ModalScreen):
     }
 
     #modal-header {
-        height: 3;
+        height: 1;
         width: 100%;
+        margin-bottom: 1;
     }
 
     #modal-title {
         text-style: bold;
+        width: 1fr;
     }
 
     #esc-hint {
-        dock: right;
+        width: auto;
         color: $text-muted;
     }
 
     #instructions {
-        padding: 1 0;
         color: $text-muted;
     }
 
     #api-key-input {
         margin: 1 0;
-        border: tall $primary;
+        border: tall $secondary;
         background: $panel;
     }
 
     #api-key-input:focus {
-        border: tall $accent;
+        border: tall $secondary;
     }
 
     #footer-hint {
-        padding: 1 0;
+        margin-top: 1;
         color: $text-muted;
     }
     """
