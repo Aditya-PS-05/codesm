@@ -8,15 +8,26 @@ from rich.markdown import Markdown
 from rich.text import Text
 from datetime import datetime
 
+from .clipboard import SelectableMixin
 
-class UserMessage(Static):
-    """User message with left blue border - OpenCode style"""
+
+class UserMessage(SelectableMixin, Static):
+    """User message with left blue border - OpenCode style.
+    
+    Click on message, then press 'c' to copy. Or right-click for menu.
+    """
+
+    can_focus = True
 
     DEFAULT_CSS = """
     UserMessage {
         height: auto;
         margin: 1 0 0 0;
         padding: 0;
+    }
+
+    UserMessage:focus {
+        border-left: heavy $secondary;
     }
 
     UserMessage > .user-content {
@@ -46,14 +57,23 @@ class UserMessage(Static):
             )
 
 
-class AssistantMessage(Static):
-    """Assistant message - OpenCode style"""
+class AssistantMessage(SelectableMixin, Static):
+    """Assistant message - OpenCode style.
+    
+    Click on message, then press 'c' to copy. Or right-click for menu.
+    """
+
+    can_focus = True
 
     DEFAULT_CSS = """
     AssistantMessage {
         height: auto;
         margin: 1 0 0 0;
         padding: 1 2;
+    }
+
+    AssistantMessage:focus {
+        background: $surface;
     }
 
     AssistantMessage .message-meta {
@@ -83,14 +103,23 @@ class AssistantMessage(Static):
         yield Static(" ".join(meta_parts), classes="message-meta")
 
 
-class ChatMessage(Static):
-    """Legacy chat message for compatibility"""
+class ChatMessage(SelectableMixin, Static):
+    """Legacy chat message for compatibility.
+    
+    Click on message, then press 'c' to copy. Or right-click for menu.
+    """
+
+    can_focus = True
 
     DEFAULT_CSS = """
     ChatMessage {
         height: auto;
         margin: 1 0 0 0;
         padding: 1 2;
+    }
+
+    ChatMessage:focus {
+        background: $surface;
     }
 
     ChatMessage.user {

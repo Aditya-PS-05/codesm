@@ -1,5 +1,6 @@
 """Tool registry"""
 
+import asyncio
 from typing import Any
 from .base import Tool
 
@@ -52,3 +53,28 @@ class ToolRegistry:
             return await tool.execute(args, context)
         except Exception as e:
             return f"Error executing {name}: {e}"
+    
+    async def execute_parallel(
+        self, 
+        tool_calls: list[tuple[str, str, dict]], 
+        context: dict
+    ) -> list[tuple[str, str, str]]:
+        """Execute multiple tools in parallel.
+        
+        Args:
+            tool_calls: List of (tool_call_id, tool_name, args)
+            context: Execution context
+            
+        Returns:
+            List of (tool_call_id, tool_name, result)
+        """
+        async def execute_one(call_id: str, name: str, args: dict) -> tuple[str, str, str]:
+            result = await self.execute(name, args, context)
+            return (call_id, name, result)
+        
+        tasks = [
+            execute_one(call_id, name, args) 
+            for call_id, name, args in tool_calls
+        ]
+        
+        return await asyncio.gather(*tasks)

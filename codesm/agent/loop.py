@@ -80,26 +80,26 @@ class ReActLoop:
                 ]
             current_messages.append(assistant_msg)
             
-            # Execute tool calls
+            # Execute tool calls in parallel
+            parsed_calls = []
             for tool_call in tool_calls:
-                # Parse args if string
                 args = tool_call.args
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
                     except json.JSONDecodeError:
                         args = {}
-                
-                result = await tools.execute(
-                    tool_call.name,
-                    args,
-                    context=context,
-                )
-                
+                parsed_calls.append((tool_call.id, tool_call.name, args))
+            
+            # Execute all tools in parallel
+            results = await tools.execute_parallel(parsed_calls, context)
+            
+            # Process results in order
+            for call_id, name, result in results:
                 # Add tool result to messages
                 tool_result_msg = {
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": call_id,
                     "content": result,
                 }
                 current_messages.append(tool_result_msg)
@@ -109,16 +109,16 @@ class ReActLoop:
                     session.add_message(
                         role="tool",
                         content=result,
-                        tool_call_id=tool_call.id,
-                        name=tool_call.name,
+                        tool_call_id=call_id,
+                        name=name,
                     )
                 
                 # Yield tool result as a chunk
                 yield StreamChunk(
                     type="tool_result",
                     content=result,
-                    id=tool_call.id,
-                    name=tool_call.name,
+                    id=call_id,
+                    name=name,
                 )
         
         if iteration >= self.max_iterations:

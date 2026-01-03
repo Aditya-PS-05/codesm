@@ -44,7 +44,7 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 - [ ] Auto todo planning & tracking during tasks
 - [ ] File citations with clickable links
 - [ ] Web page reading with objective extraction
-- [ ] Parallel tool execution optimization
+- [x] Parallel tool execution optimization
 
 ---
 
