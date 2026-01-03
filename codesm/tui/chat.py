@@ -4,8 +4,50 @@ from textual.widgets import Static, Input, Label
 from textual.containers import VerticalScroll, Vertical, Horizontal
 from textual import events
 from textual.reactive import reactive
-from rich.markdown import Markdown
+from rich.markdown import Markdown, MarkdownContext
 from rich.text import Text
+from rich.style import Style
+
+
+class ThemedMarkdown(Markdown):
+    """Markdown with themed link colors"""
+    
+    LINK_COLOR = "#5dd9c1"
+    
+    def __init__(self, markup: str, **kwargs):
+        super().__init__(markup, hyperlinks=True, **kwargs)
+        self.style_stack = []
+    
+    def _set_link_style(self):
+        """Override the link style in the style lookup"""
+        if hasattr(self, '_style'):
+            self._style = self._style.copy()
+        
+    def __rich_console__(self, console, options):
+        from rich.console import Console
+        from rich.theme import Theme
+        
+        themed_console = Console(
+            theme=Theme({
+                "markdown.link": f"bold {self.LINK_COLOR}",
+                "markdown.link_url": f"dim {self.LINK_COLOR}",
+            }),
+            force_terminal=True,
+            width=options.max_width,
+        )
+        
+        with themed_console.capture() as capture:
+            themed_console.print(Markdown(self.markup, hyperlinks=True))
+        
+        yield Text.from_ansi(capture.get())
+
+
+def styled_markdown(content: str, link_color: str = "#5dd9c1") -> ThemedMarkdown:
+    """Create Markdown with themed link styling"""
+    ThemedMarkdown.LINK_COLOR = link_color
+    return ThemedMarkdown(content)
+
+
 from datetime import datetime
 
 from .clipboard import SelectableMixin
@@ -94,7 +136,7 @@ class AssistantMessage(SelectableMixin, Static):
         self.duration = duration
 
     def compose(self):
-        yield Static(Markdown(self.content))
+        yield Static(styled_markdown(self.content))
         meta_parts = ["[#5dd9c1]▣[/]", "[dim]Assistant[/dim]"]
         if self.model:
             meta_parts.append(f"[dim]· {self.model}[/dim]")
@@ -142,11 +184,13 @@ class ChatMessage(SelectableMixin, Static):
         self.content = content
         self.set_class(True, role)
 
-    def render(self) -> str:
+    def compose(self):
         if self.role == "user":
-            return f"{self.content}\n[dim]You[/dim]"
+            yield Static(self.content)
+            yield Static("[dim]You[/dim]", classes="message-meta")
         else:
-            return f"{self.content}\n[#5dd9c1]▣[/] [dim]Assistant[/dim]"
+            yield Static(styled_markdown(self.content))
+            yield Static("[#5dd9c1]▣[/] [dim]Assistant[/dim]", classes="message-meta")
 
 
 class ContextSidebar(Static):

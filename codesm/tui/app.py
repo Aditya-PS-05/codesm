@@ -14,6 +14,7 @@ from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, API
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
+from .tools import ToolCallWidget, ToolResultWidget
 from codesm.auth import ClaudeOAuth
 
 logger = logging.getLogger(__name__)
@@ -601,11 +602,27 @@ class CodesmApp(App):
             logger.info(f"Using model: {self.model}")
 
             response_text = ""
+            tool_widgets: dict[str, ToolCallWidget] = {}
 
             async for chunk in self.agent.chat(message):
-                if hasattr(chunk, 'content'):
-                    response_text += chunk.content
-                    logger.debug(f"Received chunk of type {chunk.type}: {chunk.content[:50] if chunk.content else 'empty'}...")
+                if hasattr(chunk, 'type'):
+                    if chunk.type == "text":
+                        response_text += chunk.content
+                        logger.debug(f"Received text chunk: {chunk.content[:50] if chunk.content else 'empty'}...")
+                    elif chunk.type == "tool_call":
+                        logger.debug(f"Tool call: {chunk.name} with args {chunk.args}")
+                        tool_widget = ToolCallWidget(
+                            tool_name=chunk.name,
+                            args=chunk.args if isinstance(chunk.args, dict) else {},
+                            pending=True,
+                        )
+                        tool_widgets[chunk.id] = tool_widget
+                        messages_container.mount(tool_widget)
+                        self.call_later(lambda: chat_container.scroll_end(animate=False))
+                    elif chunk.type == "tool_result":
+                        logger.debug(f"Tool result for {chunk.name}: {chunk.content[:50] if chunk.content else 'empty'}...")
+                        if chunk.id in tool_widgets:
+                            tool_widgets[chunk.id].mark_completed()
                 else:
                     response_text += str(chunk)
 

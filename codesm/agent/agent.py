@@ -64,14 +64,11 @@ class Agent:
         ):
             if chunk.type == "text":
                 full_response += chunk.content
-                yield chunk.content
+                yield chunk
             elif chunk.type == "tool_call":
-                # Yield tool call info for TUI display
-                yield f"\n[Tool: {chunk.name}]\n"
+                yield chunk
             elif chunk.type == "tool_result":
-                # Yield abbreviated tool result
-                result_preview = chunk.content[:200] + "..." if len(chunk.content) > 200 else chunk.content
-                yield f"[Result: {result_preview}]\n"
+                yield chunk
         
         # Save final assistant response
         if full_response:
