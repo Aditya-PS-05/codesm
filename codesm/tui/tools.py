@@ -202,7 +202,7 @@ class ToolResultWidget(Static):
 
 
 class ThinkingWidget(Static):
-    """Widget to show thinking/processing state"""
+    """Widget to show thinking/processing state with animated spinner"""
 
     DEFAULT_CSS = """
     ThinkingWidget {
@@ -212,17 +212,54 @@ class ThinkingWidget(Static):
     }
     """
 
+    # Interesting facts/tips to show while thinking
+    THINKING_MESSAGES = [
+        "Analyzing your request",
+        "Reading the codebase",
+        "Thinking deeply",
+        "Crafting a response",
+        "Processing",
+        "Searching for patterns",
+        "Connecting the dots",
+        "Building context",
+        "Almost there",
+        "Working on it",
+    ]
+
     def __init__(self, message: str = "Thinking", **kwargs):
         super().__init__(**kwargs)
         self.message = message
         self._frame = 0
+        self._message_index = 0
+        # Braille spinner frames
         self._spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        # Knight rider style dots
+        self._dots = ["⬥···", "·⬥··", "··⬥·", "···⬥", "··⬥·", "·⬥··"]
 
     def render(self) -> Text:
         spinner = self._spinner[self._frame % len(self._spinner)]
-        return Text(f"{spinner} {self.message} ▸", style="dim")
+        dots = self._dots[self._frame % len(self._dots)]
+        
+        text = Text()
+        text.append(f"[{dots}] ", style="bold cyan")
+        text.append(f"{spinner} ", style="dim")
+        text.append(self.message, style="dim")
+        text.append(" ▸", style="dim")
+        
+        return text
 
     def next_frame(self):
         """Advance spinner animation"""
         self._frame += 1
+        self.refresh()
+
+    def set_message(self, message: str):
+        """Update the thinking message"""
+        self.message = message
+        self.refresh()
+
+    def cycle_message(self):
+        """Cycle to next interesting message"""
+        self._message_index = (self._message_index + 1) % len(self.THINKING_MESSAGES)
+        self.message = self.THINKING_MESSAGES[self._message_index]
         self.refresh()

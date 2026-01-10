@@ -14,7 +14,7 @@ from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, API
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
-from .tools import ToolCallWidget, ToolResultWidget
+from .tools import ToolCallWidget, ToolResultWidget, ThinkingWidget
 from codesm.auth import ClaudeOAuth
 from codesm.permission import get_permission_manager, PermissionRequest, PermissionResponse, respond_permission
 
@@ -618,15 +618,15 @@ class CodesmApp(App):
         chat_input.value = ""
         chat_input.disabled = True
 
-        # Update status to show processing
-        self._set_processing_state(True, "Thinking...")
-
         messages_container = self.query_one("#messages", Vertical)
         logger.info(f"Messages container children count: {len(messages_container.children)}")
 
-        # Add user message
+        # Add user message first
         user_msg = ChatMessage("user", message)
         messages_container.mount(user_msg)
+
+        # Update status to show processing (after user message so it appears below)
+        self._set_processing_state(True, "Thinking...")
 
         # Scroll to bottom to show latest messages
         chat_container = self.query_one("#chat-container", VerticalScroll)
@@ -653,6 +653,22 @@ class CodesmApp(App):
                         logger.debug(f"Received text chunk: {chunk.content[:50] if chunk.content else 'empty'}...")
                     elif chunk.type == "tool_call":
                         logger.debug(f"Tool call: {chunk.name} with args {chunk.args}")
+                        
+                        # Update thinking message based on tool
+                        tool_messages = {
+                            "read": "Reading files",
+                            "write": "Writing code",
+                            "edit": "Editing code",
+                            "bash": "Running command",
+                            "grep": "Searching codebase",
+                            "glob": "Finding files",
+                            "webfetch": "Fetching from web",
+                            "websearch": "Searching the web",
+                        }
+                        if hasattr(self, '_thinking_widget') and self._thinking_widget:
+                            msg = tool_messages.get(chunk.name, f"Using {chunk.name}")
+                            self._thinking_widget.set_message(msg)
+                        
                         tool_widget = ToolCallWidget(
                             tool_name=chunk.name,
                             args=chunk.args if isinstance(chunk.args, dict) else {},
@@ -722,17 +738,64 @@ class CodesmApp(App):
             chat_input.focus()
 
     def _set_processing_state(self, processing: bool, message: str = ""):
-        """Update UI to show processing state"""
+        """Update UI to show processing state with animated thinking indicator"""
         try:
             status_text = self.query_one("#chat-status-text", Static)
             hints = self.query_one("#chat-hints", Static)
             
             if processing:
-                status_text.update(f"[dim]⠋ {message}[/dim]")
+                # Start animated thinking indicator
+                self._thinking_widget = ThinkingWidget(message or "Thinking")
+                self._thinking_widget.id = "thinking-indicator"
+                
+                # Mount thinking widget in messages area
+                messages_container = self.query_one("#messages", Vertical)
+                messages_container.mount(self._thinking_widget)
+                
+                # Start spinner animation timer
+                self._spinner_timer = self.set_interval(0.08, self._animate_spinner)
+                # Start message cycling timer (every 3 seconds)
+                self._message_timer = self.set_interval(3.0, self._cycle_thinking_message)
+                
                 hints.update("[dim]esc[/dim] to interrupt")
+                status_text.update("")
             else:
+                # Stop timers and remove thinking widget
+                if hasattr(self, '_spinner_timer') and self._spinner_timer:
+                    self._spinner_timer.stop()
+                    self._spinner_timer = None
+                if hasattr(self, '_message_timer') and self._message_timer:
+                    self._message_timer.stop()
+                    self._message_timer = None
+                
+                # Remove thinking widget if exists
+                try:
+                    thinking = self.query_one("#thinking-indicator")
+                    thinking.remove()
+                except Exception:
+                    pass
+                
                 status_text.update("")
                 hints.update("[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands")
+        except Exception:
+            pass
+
+    def _animate_spinner(self):
+        """Animate the thinking spinner"""
+        try:
+            if hasattr(self, '_thinking_widget') and self._thinking_widget:
+                self._thinking_widget.next_frame()
+                # Scroll to keep thinking widget visible
+                chat_container = self.query_one("#chat-container", VerticalScroll)
+                chat_container.scroll_end(animate=False)
+        except Exception:
+            pass
+
+    def _cycle_thinking_message(self):
+        """Cycle through interesting thinking messages"""
+        try:
+            if hasattr(self, '_thinking_widget') and self._thinking_widget:
+                self._thinking_widget.cycle_message()
         except Exception:
             pass
 
