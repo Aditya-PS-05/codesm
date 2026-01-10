@@ -1042,6 +1042,9 @@ class PermissionModal(ModalScreen):
         margin: 1 0;
         padding: 1;
         background: $panel;
+        height: auto;
+        max-height: 30;
+        overflow-y: auto;
     }
 
     #command-display {
@@ -1082,12 +1085,15 @@ class PermissionModal(ModalScreen):
         self.request = request
 
     def compose(self) -> ComposeResult:
+        from .chat import styled_markdown
+
         with Vertical(id="permission-container"):
             with Horizontal(id="permission-header"):
                 yield Static(f"⚠️  {self.request.title}", id="permission-title")
                 yield Static(f"[{self.request.type}]", id="permission-type")
-            
-            yield Static(self.request.description, id="permission-description")
+
+            # Render description as markdown for syntax highlighting
+            yield Static(styled_markdown(self.request.description), id="permission-description")
             yield Static(f"Command: {self.request.command}", id="command-display")
             
             with Horizontal(id="button-row"):

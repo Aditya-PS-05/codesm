@@ -50,6 +50,7 @@ class Agent:
         # Build context for tools
         context = {
             "session": self.session,
+            "session_id": self.session.id,
             "cwd": self.directory,
         }
         

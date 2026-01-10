@@ -1,5 +1,6 @@
 """Chat view for the TUI - OpenCode style layout"""
 
+import re
 from textual.widgets import Static, Input, Label
 from textual.containers import VerticalScroll, Vertical, Horizontal
 from textual import events
@@ -7,16 +8,39 @@ from textual.reactive import reactive
 from rich.markdown import Markdown, MarkdownContext
 from rich.text import Text
 from rich.style import Style
+from rich.console import Group
+
+
+def render_diff_block(diff_content: str) -> Text:
+    """Render a diff block with red/green background colors like Amp."""
+    text = Text()
+    
+    for line in diff_content.split('\n'):
+        if line.startswith('+') and not line.startswith('+++'):
+            # Added line - green text on dark green background
+            text.append(line + '\n', style="green on #1a2f1a")
+        elif line.startswith('-') and not line.startswith('---'):
+            # Removed line - red text on dark red background
+            text.append(line + '\n', style="red on #2f1a1a")
+        elif line.startswith('@@'):
+            # Hunk header - cyan/blue
+            text.append(line + '\n', style="cyan")
+        else:
+            # Context line - dim
+            text.append(line + '\n', style="dim")
+    
+    return text
 
 
 class ThemedMarkdown(Markdown):
-    """Markdown with themed link colors"""
+    """Markdown with themed link colors and styled diff blocks"""
     
     LINK_COLOR = "#5dd9c1"
     
     def __init__(self, markup: str, **kwargs):
         super().__init__(markup, hyperlinks=True, **kwargs)
         self.style_stack = []
+        self.original_markup = markup
     
     def _set_link_style(self):
         """Override the link style in the style lookup"""
@@ -24,6 +48,42 @@ class ThemedMarkdown(Markdown):
             self._style = self._style.copy()
         
     def __rich_console__(self, console, options):
+        from rich.console import Console
+        from rich.theme import Theme
+        
+        # Check if content contains diff code blocks
+        diff_pattern = re.compile(r'```diff\n(.*?)```', re.DOTALL)
+        
+        if diff_pattern.search(self.original_markup):
+            # Process content with custom diff rendering
+            parts = []
+            last_end = 0
+            
+            for match in diff_pattern.finditer(self.original_markup):
+                # Add markdown before the diff block
+                before_text = self.original_markup[last_end:match.start()]
+                if before_text.strip():
+                    parts.append(self._render_markdown(before_text, options))
+                
+                # Add styled diff block
+                diff_content = match.group(1)
+                parts.append(render_diff_block(diff_content))
+                
+                last_end = match.end()
+            
+            # Add any remaining markdown after last diff block
+            after_text = self.original_markup[last_end:]
+            if after_text.strip():
+                parts.append(self._render_markdown(after_text, options))
+            
+            for part in parts:
+                yield part
+        else:
+            # No diff blocks, render normally
+            yield self._render_markdown(self.original_markup, options)
+    
+    def _render_markdown(self, content: str, options) -> Text:
+        """Render markdown content to Text."""
         from rich.console import Console
         from rich.theme import Theme
         
@@ -37,9 +97,9 @@ class ThemedMarkdown(Markdown):
         )
         
         with themed_console.capture() as capture:
-            themed_console.print(Markdown(self.markup, hyperlinks=True))
+            themed_console.print(Markdown(content, hyperlinks=True, code_theme="monokai"))
         
-        yield Text.from_ansi(capture.get())
+        return Text.from_ansi(capture.get())
 
 
 def styled_markdown(content: str, link_color: str = "#5dd9c1") -> ThemedMarkdown:

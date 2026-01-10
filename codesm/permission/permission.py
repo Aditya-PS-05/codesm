@@ -93,9 +93,21 @@ class Permission:
         description: str,
         metadata: Optional[dict] = None,
     ) -> None:
+        import logging
+        logger = logging.getLogger(__name__)
+
         pattern = f"{type}:{command}"
-        if self.is_approved(session_id, type) or self.is_approved(session_id, pattern):
+        logger.info(f"Permission.ask called: session={session_id}, type={type}, pattern={pattern}")
+        logger.info(f"Approved sessions: {list(self._approved.keys())}")
+
+        if self.is_approved(session_id, type):
+            logger.info(f"Permission auto-approved for type: {type}")
             return
+        if self.is_approved(session_id, pattern):
+            logger.info(f"Permission auto-approved for pattern: {pattern}")
+            return
+
+        logger.info(f"Permission not auto-approved, showing modal...")
         
         request = PermissionRequest(
             id=str(uuid.uuid4()),

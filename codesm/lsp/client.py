@@ -57,12 +57,14 @@ class LSPClient:
         if not self.process:
             return False
 
-        root_uri = Path(self.root_path).as_uri()
-        
+        # Convert to absolute path before creating URI
+        root_path_abs = Path(self.root_path).resolve()
+        root_uri = root_path_abs.as_uri()
+
         result = await self._request("initialize", {
             "processId": None,
             "rootUri": root_uri,
-            "rootPath": self.root_path,
+            "rootPath": str(root_path_abs),
             "capabilities": {
                 "textDocument": {
                     "publishDiagnostics": {
@@ -76,7 +78,7 @@ class LSPClient:
                 },
             },
             "workspaceFolders": [
-                {"uri": root_uri, "name": Path(self.root_path).name}
+                {"uri": root_uri, "name": root_path_abs.name}
             ],
         })
         
@@ -93,7 +95,9 @@ class LSPClient:
 
         file_path = Path(path)
         if not file_path.is_absolute():
-            file_path = Path(self.root_path) / path
+            file_path = Path(self.root_path).resolve() / path
+        else:
+            file_path = file_path.resolve()
 
         if text is None:
             try:
@@ -103,7 +107,7 @@ class LSPClient:
                 return
 
         language_id = self._get_language_id(str(file_path))
-        
+
         await self._notify("textDocument/didOpen", {
             "textDocument": {
                 "uri": file_path.as_uri(),
@@ -120,7 +124,9 @@ class LSPClient:
 
         file_path = Path(path)
         if not file_path.is_absolute():
-            file_path = Path(self.root_path) / path
+            file_path = Path(self.root_path).resolve() / path
+        else:
+            file_path = file_path.resolve()
 
         await self._notify("textDocument/didChange", {
             "textDocument": {

@@ -667,6 +667,16 @@ class CodesmApp(App):
                         logger.debug(f"Tool result for {chunk.name}: {chunk.content[:50] if chunk.content else 'empty'}...")
                         if chunk.id in tool_widgets:
                             tool_widgets[chunk.id].mark_completed()
+
+                            # Display tool result for certain tools (edit, write, bash)
+                            if chunk.name in ["edit", "write", "bash", "grep", "glob"]:
+                                # Show the full result as a message (not just preview)
+                                from .chat import styled_markdown, AssistantMessage
+                                result_msg = Static(styled_markdown(chunk.content))
+                                result_msg.styles.padding = (0, 2, 1, 4)
+                                result_msg.styles.margin = (0, 0, 1, 0)
+                                messages_container.mount(result_msg)
+                                self.call_later(lambda: chat_container.scroll_end(animate=False))
                 else:
                     response_text += str(chunk)
 
