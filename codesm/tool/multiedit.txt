@@ -1,0 +1,52 @@
+Make multiple edits to a single file in one atomic operation.
+
+Use this tool when you need to make several changes to different parts of the same file. All edits are validated before any changes are applied - if any edit fails validation, none are applied.
+
+## Parameters
+
+- **path**: Absolute path to the file to modify
+- **edits**: Array of edit operations, each containing:
+  - **old_content**: Exact text to replace (must match file contents exactly)
+  - **new_content**: Text to replace it with (must be different from old_content)
+  - **replace_all**: Optional. If true, replace all occurrences (default: false)
+
+## How It Works
+
+1. All edits are validated first (dry run)
+2. Edits are applied sequentially in order
+3. Each edit operates on the result of previous edits
+4. Either all edits succeed, or none are applied
+
+## When to Use
+
+- Renaming a variable across multiple locations in a file
+- Updating multiple function signatures
+- Making coordinated changes that must all succeed together
+- Refactoring multiple related code blocks
+
+## Example
+
+```json
+{
+  "path": "/home/user/project/src/main.py",
+  "edits": [
+    {
+      "old_content": "def old_name(",
+      "new_content": "def new_name(",
+      "replace_all": true
+    },
+    {
+      "old_content": "old_name()",
+      "new_content": "new_name()",
+      "replace_all": true
+    }
+  ]
+}
+```
+
+## Important
+
+- old_content must match exactly (including whitespace and indentation)
+- old_content and new_content must be different
+- Plan edits carefully - earlier edits affect what later edits will find
+- Use replace_all when renaming variables or updating all occurrences

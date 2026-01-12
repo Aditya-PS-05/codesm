@@ -23,7 +23,7 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 #### Core Features (from opencode)
 - [X] LSP integration
 - [x] Code search (semantic search)
-- [ ] Multi-edit (batch file edits)
+- [x] Multi-edit (batch file edits)
 - [ ] Patch tool
 - [ ] Task/sub-agent spawning
 - [ ] Todo tracking for agent

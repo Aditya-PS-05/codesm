@@ -15,6 +15,7 @@ class ToolRegistry:
         from .read import ReadTool
         from .write import WriteTool
         from .edit import EditTool
+        from .multiedit import MultiEditTool
         from .bash import BashTool
         from .grep import GrepTool
         from .glob import GlobTool
@@ -23,7 +24,7 @@ class ToolRegistry:
         from .diagnostics import DiagnosticsTool
         from .codesearch import CodeSearchTool
 
-        for tool_class in [ReadTool, WriteTool, EditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool]:
+        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
     
