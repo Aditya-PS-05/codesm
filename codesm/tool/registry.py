@@ -23,8 +23,9 @@ class ToolRegistry:
         from .websearch import WebSearchTool
         from .diagnostics import DiagnosticsTool
         from .codesearch import CodeSearchTool
+        from .todo import TodoTool
 
-        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool]:
+        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
     

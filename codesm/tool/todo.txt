@@ -1,0 +1,31 @@
+Manage your task list to track work items throughout the session.
+
+Use this tool to:
+- Break down complex tasks into smaller, trackable items
+- Track what's pending, in progress, or completed
+- Prioritize work items
+
+## Actions
+
+- `add`: Create a new todo with content and optional priority
+- `list`: Show all todos (use include_done=true to see completed)
+- `start`: Mark a todo as in-progress
+- `done`: Mark a todo as completed
+- `cancel`: Mark a todo as cancelled
+- `delete`: Remove a todo entirely
+- `update`: Change a todo's content
+- `clear_done`: Remove all completed todos
+
+## Examples
+
+Add a high-priority task:
+{"action": "add", "content": "Fix authentication bug", "priority": 2}
+
+List pending tasks:
+{"action": "list"}
+
+Mark task as in progress:
+{"action": "start", "id": "todo_abc123"}
+
+Complete a task:
+{"action": "done", "id": "todo_abc123"}
