@@ -18,7 +18,7 @@ class Agent:
         directory: Path,
         model: str,
         session: Session | None = None,
-        max_iterations: int = 15
+        max_iterations: int = 0  # 0 = unlimited
     ):
         self.directory = Path(directory).resolve()
         self._model = model

@@ -12,7 +12,7 @@ from codesm.tool.registry import ToolRegistry
 class ReActLoop:
     """Implements the ReAct (Reasoning + Acting) loop"""
     
-    max_iterations: int = 15
+    max_iterations: int = 0  # 0 = unlimited
     
     async def execute(
         self,
@@ -28,7 +28,7 @@ class ReActLoop:
         current_messages = list(messages)  # Copy to avoid mutating original
         session = context.get("session")
         
-        while iteration < self.max_iterations:
+        while self.max_iterations == 0 or iteration < self.max_iterations:
             iteration += 1
             
             # Get response from LLM
@@ -112,7 +112,7 @@ class ReActLoop:
                     name=name,
                 )
         
-        if iteration >= self.max_iterations:
+        if self.max_iterations > 0 and iteration >= self.max_iterations:
             yield StreamChunk(
                 type="text",
                 content="\n\n[Maximum iterations reached - stopping]",

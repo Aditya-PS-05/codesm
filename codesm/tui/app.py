@@ -687,12 +687,13 @@ class CodesmApp(App):
                     elif chunk.type == "tool_result":
                         logger.debug(f"Tool result for {chunk.name}: {chunk.content[:50] if chunk.content else 'empty'}...")
                         if chunk.id in tool_widgets:
-                            tool_widgets[chunk.id].mark_completed()
+                            # Generate result summary for inline display
+                            result_summary = self._get_result_summary(chunk.name, chunk.content)
+                            tool_widgets[chunk.id].mark_completed(result_summary=result_summary)
 
-                            # Display tool result for certain tools (edit, write, bash)
-                            if chunk.name in ["edit", "write", "bash", "grep", "glob"]:
-                                # Show the full result as a message (not just preview)
-                                from .chat import styled_markdown, AssistantMessage
+                            # Only show full result for edit/write/bash (not glob/grep)
+                            if chunk.name in ["edit", "write", "bash"]:
+                                from .chat import styled_markdown
                                 result_msg = Static(styled_markdown(chunk.content))
                                 result_msg.styles.padding = (0, 2, 1, 4)
                                 result_msg.styles.margin = (0, 0, 1, 0)
@@ -926,6 +927,55 @@ class CodesmApp(App):
             self.query_one("#chat-model-indicator", Static).update(f"[dim]{short_name}[/dim]")
         except Exception:
             pass
+
+    def _get_result_summary(self, tool_name: str, content: str) -> str:
+        """Generate a compact summary for tool results."""
+        if not content:
+            return ""
+        
+        lines = content.strip().split("\n")
+        
+        if tool_name == "glob":
+            # Count files found
+            if content == "No files found":
+                return "(no files)"
+            count = len([l for l in lines if l.strip()])
+            return f"({count} files)"
+        
+        elif tool_name == "grep":
+            # Count matches
+            if "No matches" in content or not lines:
+                return "(no matches)"
+            count = len([l for l in lines if l.strip() and not l.startswith("Results")])
+            return f"({count} matches)"
+        
+        elif tool_name == "read":
+            # Show line count
+            count = len(lines)
+            return f"({count} lines)"
+        
+        elif tool_name in ["edit", "write"]:
+            return ""  # Full result shown separately
+        
+        elif tool_name == "bash":
+            # Show exit code if available, or line count
+            if "exit code" in content.lower():
+                return ""
+            return f"({len(lines)} lines)"
+        
+        elif tool_name == "codesearch":
+            return ""  # Complex results
+        
+        elif tool_name == "todo":
+            # Extract todo name from result like "Started: todo_xxx - Task name"
+            if " - " in content:
+                name = content.split(" - ", 1)[1].strip()
+                if len(name) > 50:
+                    name = name[:47] + "..."
+                return name
+            return ""
+        
+        return ""
 
     def _parse_todo_result(self, content: str) -> list[dict]:
         """Parse todo tool result into a list of todo items for display.

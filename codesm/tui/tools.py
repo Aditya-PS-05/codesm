@@ -6,19 +6,19 @@ from rich.text import Text
 
 
 TOOL_ICONS = {
-    "read": "→",
-    "write": "←",
-    "edit": "←",
-    "multiedit": "⇄",
-    "bash": "#",
+    "read": "✓",
+    "write": "✓",
+    "edit": "✓",
+    "multiedit": "✓",
+    "bash": "✓",
     "grep": "✓",
     "glob": "✓",
-    "web": "%",
-    "webfetch": "%",
-    "websearch": "◈",
-    "codesearch": "⊛",
-    "todo": "☐",
-    "default": "⚙",
+    "web": "✓",
+    "webfetch": "✓",
+    "websearch": "✓",
+    "codesearch": "✓",
+    "todo": "✓",
+    "default": "✓",
 }
 
 TOOL_COLORS = {
@@ -68,6 +68,7 @@ class ToolCallWidget(Static):
         self.tool_name = tool_name
         self.args = args or {}
         self.pending = pending
+        self._result_summary = ""
         self.set_class(pending, "pending")
         self.set_class(not pending, "completed")
 
@@ -79,10 +80,13 @@ class ToolCallWidget(Static):
         
         if self.pending:
             text.append("~ ", style="dim")
+            text.append(self._format_tool_call(), style="dim")
         else:
-            text.append(f"{icon} ", style=f"bold {color}")
-        
-        text.append(self._format_tool_call(), style="dim" if self.pending else "")
+            text.append(f"{icon} ", style=f"bold green")
+            text.append(self._format_tool_call(), style="")
+            # Show result summary if available
+            if self._result_summary:
+                text.append(f" {self._result_summary}", style="dim")
         
         return text
 
@@ -155,24 +159,23 @@ class ToolCallWidget(Static):
         elif name == "todo":
             action = args.get("action", "")
             content = args.get("content", "")
-            todo_id = args.get("id", "")
             if action == "add":
-                return f"Todo: + {content[:50]}{'...' if len(content) > 50 else ''}"
+                return f"Todo + {content[:50]}{'...' if len(content) > 50 else ''}"
             elif action == "list":
-                return "Todo: listing tasks"
+                return "Todo listing"
             elif action == "start":
-                return f"Todo: ▸ {todo_id}"
+                return "Todo ▸"  # Name will be added from result
             elif action == "done":
-                return f"Todo: ✓ {todo_id}"
+                return "Todo ✓"  # Name will be added from result
             elif action == "cancel":
-                return f"Todo: ✗ {todo_id}"
+                return "Todo ✗"
             elif action == "delete":
-                return f"Todo: - {todo_id}"
+                return "Todo -"
             elif action == "update":
-                return f"Todo: ~ {todo_id}"
+                return "Todo ~"
             elif action == "clear_done":
-                return "Todo: clearing completed"
-            return f"Todo: {action}"
+                return "Todo clearing completed"
+            return f"Todo {action}"
         
         else:
             return f"{name} {self._format_args(args)}"
@@ -197,9 +200,10 @@ class ToolCallWidget(Static):
             parts.append(f"{k}={v}")
         return " ".join(parts)
 
-    def mark_completed(self, metadata: dict | None = None):
-        """Mark tool as completed with optional metadata"""
+    def mark_completed(self, metadata: dict | None = None, result_summary: str = ""):
+        """Mark tool as completed with optional metadata and result summary"""
         self.pending = False
+        self._result_summary = result_summary
         self.set_class(False, "pending")
         self.set_class(True, "completed")
         if metadata:
