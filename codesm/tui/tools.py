@@ -17,6 +17,7 @@ TOOL_ICONS = {
     "webfetch": "%",
     "websearch": "◈",
     "codesearch": "⊛",
+    "todo": "☐",
     "default": "⚙",
 }
 
@@ -32,6 +33,7 @@ TOOL_COLORS = {
     "webfetch": "#8aadf4",
     "websearch": "#8aadf4",
     "codesearch": "#ee99a0",
+    "todo": "#eed49f",
     "default": "#939ab7",
 }
 
@@ -150,6 +152,28 @@ class ToolCallWidget(Static):
                 result += f" in {self._short_path(path)}"
             return result
         
+        elif name == "todo":
+            action = args.get("action", "")
+            content = args.get("content", "")
+            todo_id = args.get("id", "")
+            if action == "add":
+                return f"Todo: + {content[:50]}{'...' if len(content) > 50 else ''}"
+            elif action == "list":
+                return "Todo: listing tasks"
+            elif action == "start":
+                return f"Todo: ▸ {todo_id}"
+            elif action == "done":
+                return f"Todo: ✓ {todo_id}"
+            elif action == "cancel":
+                return f"Todo: ✗ {todo_id}"
+            elif action == "delete":
+                return f"Todo: - {todo_id}"
+            elif action == "update":
+                return f"Todo: ~ {todo_id}"
+            elif action == "clear_done":
+                return "Todo: clearing completed"
+            return f"Todo: {action}"
+        
         else:
             return f"{name} {self._format_args(args)}"
 
@@ -181,6 +205,93 @@ class ToolCallWidget(Static):
         if metadata:
             self.args.update(metadata)
         self.refresh()
+
+
+class TodoItemWidget(Static):
+    """Widget to display a single todo item - OpenCode style"""
+
+    DEFAULT_CSS = """
+    TodoItemWidget {
+        height: auto;
+        padding: 0 2 0 4;
+        margin: 0;
+    }
+    """
+
+    def __init__(self, todo_id: str, content: str, status: str = "pending", **kwargs):
+        super().__init__(**kwargs)
+        self.todo_id = todo_id
+        self.content = content
+        self.status = status
+
+    def render(self) -> Text:
+        text = Text()
+        
+        # Status indicator like opencode: [✓] completed, [•] in_progress, [ ] pending
+        if self.status == "done":
+            text.append("[✓] ", style="bold green")
+        elif self.status == "in_progress":
+            text.append("[•] ", style="bold yellow")
+        elif self.status == "cancelled":
+            text.append("[-] ", style="dim")
+        else:  # pending
+            text.append("[ ] ", style="dim")
+        
+        # Content with appropriate style
+        content_style = "dim strike" if self.status in ("done", "cancelled") else ""
+        if self.status == "in_progress":
+            content_style = "yellow"
+        text.append(self.content, style=content_style)
+        
+        return text
+
+
+class TodoListWidget(Static):
+    """Widget to display a list of todos - OpenCode/Amp style"""
+
+    DEFAULT_CSS = """
+    TodoListWidget {
+        height: auto;
+        padding: 0 2;
+        margin: 0 0 1 0;
+    }
+    """
+
+    def __init__(self, todos: list[dict], **kwargs):
+        super().__init__(**kwargs)
+        self.todos = todos
+
+    def render(self) -> Text:
+        text = Text()
+        
+        if not self.todos:
+            text.append("  No todos.", style="dim italic")
+            return text
+        
+        for i, todo in enumerate(self.todos):
+            if i > 0:
+                text.append("\n")
+            
+            status = todo.get("status", "pending")
+            content = todo.get("content", "")
+            
+            # Status indicator
+            if status == "done":
+                text.append("  [✓] ", style="bold green")
+            elif status == "in_progress":
+                text.append("  [•] ", style="bold yellow")
+            elif status == "cancelled":
+                text.append("  [-] ", style="dim")
+            else:
+                text.append("  [ ] ", style="dim")
+            
+            # Content
+            content_style = "dim strike" if status in ("done", "cancelled") else ""
+            if status == "in_progress":
+                content_style = "yellow"
+            text.append(content, style=content_style)
+        
+        return text
 
 
 class ToolResultWidget(Static):

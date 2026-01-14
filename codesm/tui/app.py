@@ -14,7 +14,7 @@ from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, API
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
-from .tools import ToolCallWidget, ToolResultWidget, ThinkingWidget
+from .tools import ToolCallWidget, ToolResultWidget, ThinkingWidget, TodoListWidget
 from codesm.auth import ClaudeOAuth
 from codesm.permission import get_permission_manager, PermissionRequest, PermissionResponse, respond_permission
 
@@ -698,6 +698,13 @@ class CodesmApp(App):
                                 result_msg.styles.margin = (0, 0, 1, 0)
                                 messages_container.mount(result_msg)
                                 self.call_later(lambda: chat_container.scroll_end(animate=False))
+                            elif chunk.name == "todo":
+                                # Parse todo list from result and display nicely
+                                todos = self._parse_todo_result(chunk.content)
+                                if todos:
+                                    todo_widget = TodoListWidget(todos)
+                                    messages_container.mount(todo_widget)
+                                    self.call_later(lambda: chat_container.scroll_end(animate=False))
                 else:
                     response_text += str(chunk)
 
@@ -919,6 +926,25 @@ class CodesmApp(App):
             self.query_one("#chat-model-indicator", Static).update(f"[dim]{short_name}[/dim]")
         except Exception:
             pass
+
+    def _parse_todo_result(self, content: str) -> list[dict]:
+        """Parse todo tool result into a list of todo items for display.
+        
+        Only shows the full list on explicit 'list' action to avoid repetition.
+        """
+        if not content or not self.agent or not self.agent.session:
+            return []
+        
+        # Only show full list on explicit list action (contains summary line)
+        if "Pending:" in content and "In Progress:" in content:
+            from codesm.session.todo import TodoList
+            todo_list = TodoList(self.agent.session.id)
+            return [
+                {"content": t.content, "status": t.status}
+                for t in todo_list.list()
+            ]
+        
+        return []
 
     def action_toggle_theme(self):
         """Toggle between themes"""

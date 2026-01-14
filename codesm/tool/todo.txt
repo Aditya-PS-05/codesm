@@ -1,15 +1,20 @@
 Manage your task list to track work items throughout the session.
 
-Use this tool to:
-- Break down complex tasks into smaller, trackable items
-- Track what's pending, in progress, or completed
-- Prioritize work items
+IMPORTANT: After adding todos or updating their status, IMMEDIATELY continue working on the tasks. Do NOT stop to explain or wait for user input. The todo list is for YOUR tracking - add items then start implementing them right away.
+
+## Workflow
+
+1. When given a complex task, add todos to break it down
+2. Mark the first todo as "start" (in_progress)
+3. Immediately begin implementing that task
+4. When done, mark it as "done" and start the next one
+5. Continue until all todos are complete
 
 ## Actions
 
 - `add`: Create a new todo with content and optional priority
 - `list`: Show all todos (use include_done=true to see completed)
-- `start`: Mark a todo as in-progress
+- `start`: Mark a todo as in-progress (only one at a time)
 - `done`: Mark a todo as completed
 - `cancel`: Mark a todo as cancelled
 - `delete`: Remove a todo entirely
@@ -18,14 +23,13 @@ Use this tool to:
 
 ## Examples
 
-Add a high-priority task:
-{"action": "add", "content": "Fix authentication bug", "priority": 2}
-
-List pending tasks:
-{"action": "list"}
-
-Mark task as in progress:
+Add tasks then immediately start working:
+{"action": "add", "content": "Design the API interface"}
+{"action": "add", "content": "Implement the handler"}
 {"action": "start", "id": "todo_abc123"}
+[Then immediately begin implementing - do not stop here]
 
-Complete a task:
+Complete a task and continue:
 {"action": "done", "id": "todo_abc123"}
+{"action": "start", "id": "todo_def456"}
+[Continue implementing the next task]
