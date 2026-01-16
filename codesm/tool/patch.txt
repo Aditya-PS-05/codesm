@@ -1,0 +1,51 @@
+Apply a patch to modify multiple files in a single operation.
+
+Supports adding, updating, deleting, and moving files with context-aware changes.
+
+## Patch Format
+
+The patch must use the following format:
+
+```
+*** Begin Patch
+*** Add File: path/to/new/file.py
++line 1 of new file
++line 2 of new file
+
+*** Delete File: path/to/delete.py
+
+*** Update File: path/to/existing/file.py
+@@ context description (optional)
+ unchanged line (context)
+-removed line
++added line
+ unchanged line (context)
+
+*** Update File: old/path.py
+*** Move to: new/path.py
+@@ function definition
+ def example():
+-    old_code()
++    new_code()
+
+*** End Patch
+```
+
+## Line Prefixes
+
+- `+` - Line to add
+- `-` - Line to remove  
+- ` ` (space) - Context line (must match existing content)
+
+## When to Use
+
+- Making changes across multiple files atomically
+- Applying complex refactoring operations
+- When you need context-aware matching (not exact string match)
+- Moving/renaming files with content changes
+
+## Important
+
+- Context lines MUST match existing file content exactly
+- Use enough context lines to uniquely identify the location
+- File paths are relative to the workspace root

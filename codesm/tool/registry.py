@@ -34,8 +34,9 @@ class ToolRegistry:
         from .todo import TodoTool
         from .ls import ListTool
         from .batch import BatchTool
+        from .patch import PatchTool
 
-        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool]:
+        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
     
