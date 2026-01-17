@@ -11,7 +11,7 @@ from textual.widgets import Footer, Input, Static, RichLog, Markdown
 from textual.binding import Binding
 
 from .themes import THEMES, get_next_theme
-from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal, ThemeSelectModal, PermissionModal
+from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal, ThemeSelectModal, PermissionModal, ModeSelectModal, RUSH_MODE_MODELS
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
@@ -282,12 +282,14 @@ class CodesmApp(App):
         Binding("ctrl+t", "toggle_theme", "Theme", show=True),
         Binding("ctrl+p", "show_command_palette", "Commands", show=True),
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False),
+        Binding("tab", "toggle_mode", "Mode", show=False),
     ]
 
     def __init__(self, directory: Path, model: str, session_id: str | None = None):
         super().__init__()
         self.directory = directory
         self.model = model
+        self._base_model = model  # Store the original model for mode switching
         self.agent = None
         self.session_id = session_id
         self.in_chat = False
@@ -300,6 +302,7 @@ class CodesmApp(App):
         self._pending_permission_requests: dict[str, PermissionRequest] = {}
         self._chat_worker: Worker | None = None
         self._cancel_requested = False
+        self._mode = "smart"  # Agent mode: "smart" or "rush"
         
         # Set up permission callback
         permission_manager = get_permission_manager()
@@ -317,10 +320,10 @@ class CodesmApp(App):
                                 placeholder="Build anything...",
                                 id="message-input"
                             )
-                            yield Static(f"[bold #5dd9c1]Build[/]  {self._short_model_name()}", id="model-indicator")
+                            yield Static(f"[bold #5dd9c1]Smart[/]  {self._short_model_name()}", id="model-indicator")
                     yield Center(
                         Static(
-                            "[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands",
+                            "[dim]tab[/dim] switch mode  [dim]ctrl+p[/dim] commands",
                             id="hints"
                         )
                     )
@@ -336,13 +339,13 @@ class CodesmApp(App):
                                 id="chat-message-input"
                             )
                             with Horizontal(id="chat-status-bar"):
-                                yield Static("[bold #5dd9c1]Build[/]", id="chat-agent-indicator")
+                                yield Static("[bold #5dd9c1]Smart[/]", id="chat-agent-indicator")
                                 yield Static("", id="chat-spacer")
                                 yield Static(f"[dim]{self._short_model_name()}[/dim]", id="chat-model-indicator")
                         
                         with Horizontal(id="chat-hint-bar"):
                             yield Static("", id="chat-status-text")
-                            yield Static("[dim]tab[/dim] switch agent  [dim]ctrl+p[/dim] commands", id="chat-hints")
+                            yield Static("[dim]tab[/dim] switch mode  [dim]ctrl+p[/dim] commands", id="chat-hints")
 
             yield ContextSidebar(id="context-sidebar", classes="hidden")
 
@@ -355,6 +358,20 @@ class CodesmApp(App):
             return model_id
         return self.model
 
+    def _get_mode_display(self) -> str:
+        """Get display string for current mode"""
+        if self._mode == "rush":
+            return "[bold #ff9800]Rush[/]"
+        return "[bold #5dd9c1]Smart[/]"
+
+    def _get_effective_model(self) -> str:
+        """Get the effective model based on current mode"""
+        if self._mode == "rush":
+            # Get provider from base model
+            provider = self._base_model.split("/")[0] if "/" in self._base_model else "anthropic"
+            return RUSH_MODE_MODELS.get(provider, "anthropic/claude-haiku-3.5")
+        return self._base_model
+
     def _get_active_input(self) -> Input:
         """Get the currently active input"""
         if self.in_chat:
@@ -366,15 +383,25 @@ class CodesmApp(App):
         for theme in THEMES.values():
             self.register_theme(theme)
         
-        # Load saved theme preference
+        # Load saved preferences
         from codesm.auth.credentials import CredentialStore
         store = CredentialStore()
+        
+        # Load theme preference
         saved_theme = store.get_preferred_theme()
         if saved_theme and saved_theme in [t.name.replace("codesm-", "") for t in THEMES.values()]:
             self._theme_name = saved_theme
             self.theme = f"codesm-{saved_theme}"
         else:
             self.theme = "codesm-dark"
+        
+        # Load mode preference
+        saved_mode = store.get_preferred_mode()
+        if saved_mode in ("smart", "rush"):
+            self._mode = saved_mode
+            self.model = self._get_effective_model()
+            if self.agent:
+                self.agent.model = self.model
 
         from codesm.agent.agent import Agent
         from codesm.session.session import Session
@@ -472,10 +499,17 @@ class CodesmApp(App):
             self.push_screen(ProviderConnectModal(), self._on_provider_selected)
         elif cmd == "/session":
             self.push_screen(SessionListModal(), self._on_session_selected)
+        elif cmd == "/mode":
+            self.push_screen(ModeSelectModal(self._mode), self._on_mode_selected)
+        elif cmd == "/rush":
+            self._set_mode("rush")
+        elif cmd == "/smart":
+            self._set_mode("smart")
         elif cmd == "/help":
-            self.notify("Commands: /init, /new, /models, /agents, /session, /status, /theme, /editor, /connect, /help")
+            self.notify("Commands: /init, /new, /models, /mode, /rush, /smart, /session, /status, /theme, /connect, /help")
         elif cmd == "/status":
-            self.notify(f"Model: {self.model} | Dir: {self.directory}")
+            mode_str = "Rush" if self._mode == "rush" else "Smart"
+            self.notify(f"Mode: {mode_str} | Model: {self.model} | Dir: {self.directory}")
         elif cmd == "/init":
             self.notify("AGENTS.md initialization (coming soon)")
         elif cmd == "/agents":
@@ -499,6 +533,36 @@ class CodesmApp(App):
             from .themes import get_theme_display_name
             self.notify(f"Theme: {get_theme_display_name(result)}")
         self._get_active_input().focus()
+
+    def _on_mode_selected(self, result: str | None):
+        """Handle mode selection from modal"""
+        if result:
+            self._set_mode(result)
+        self._get_active_input().focus()
+
+    def _set_mode(self, mode: str):
+        """Set the agent mode (smart or rush)"""
+        if mode not in ("smart", "rush"):
+            return
+        
+        self._mode = mode
+        
+        # Update the effective model based on mode
+        self.model = self._get_effective_model()
+        if self.agent:
+            self.agent.model = self.model
+        
+        self._update_model_display()
+        
+        # Save mode preference
+        from codesm.auth.credentials import CredentialStore
+        store = CredentialStore()
+        store.set_preferred_mode(mode)
+        
+        mode_name = "Rush" if mode == "rush" else "Smart"
+        model_short = self.model.split("/")[-1] if "/" in self.model else self.model
+        logger.info(f"Mode switched to {mode_name}, using model: {self.model}")
+        self.notify(f"{mode_name}: {model_short}")
 
     def _on_session_selected(self, result: str | None):
         """Handle session selection"""
@@ -527,6 +591,10 @@ class CodesmApp(App):
             if result == "__connect_provider__":
                 self.push_screen(ProviderConnectModal(), self._on_provider_selected)
                 return
+            
+            # When user selects a model, store it as base and reset to smart mode
+            self._base_model = result
+            self._mode = "smart"
             self.model = result
             self._update_model_display()
             if self.agent:
@@ -942,13 +1010,18 @@ class CodesmApp(App):
     def _update_model_display(self):
         """Update model display in UI"""
         short_name = self._short_model_name()
+        mode_display = self._get_mode_display()
+        
+        # Show the actual model being used (important for rush mode)
+        actual_model = self.model.split("/")[-1] if "/" in self.model else self.model
 
         # Update welcome screen
-        self.query_one("#model-indicator", Static).update(f"[bold #5dd9c1]Build[/]  {short_name}")
+        self.query_one("#model-indicator", Static).update(f"{mode_display}  {actual_model}")
         
         # Update chat screen
         try:
-            self.query_one("#chat-model-indicator", Static).update(f"[dim]{short_name}[/dim]")
+            self.query_one("#chat-agent-indicator", Static).update(mode_display)
+            self.query_one("#chat-model-indicator", Static).update(f"[dim]{actual_model}[/dim]")
         except Exception:
             pass
 
@@ -1057,6 +1130,11 @@ class CodesmApp(App):
                 sidebar.add_class("hidden")
         except Exception:
             pass
+
+    def action_toggle_mode(self):
+        """Toggle between smart and rush modes"""
+        new_mode = "rush" if self._mode == "smart" else "smart"
+        self._set_mode(new_mode)
 
     async def action_connect_provider(self):
         """Show connect provider modal"""

@@ -1,10 +1,55 @@
 # codesm
 
-An AI coding agent built with Python + Rust. Features a TUI interface, multi-provider support (Anthropic Claude, OpenAI GPT), and a powerful tool system for reading, writing, and executing code.
+An AI coding agent built with Python + Rust. Features a TUI interface, multi-provider support (Anthropic, OpenAI, OpenRouter), and a powerful tool system for reading, writing, and executing code.
 
 > Still in early development. Contributions welcome!
 
 ![codesm TUI](assets/image.png)
+
+## Quick Start
+
+```bash
+# Install
+uv pip install -e .
+
+# Run
+codesm
+
+# Or with uv directly
+uv run codesm
+```
+
+## Agent Modes
+
+codesm supports two agent modes for different task types:
+
+### Smart Mode (Default)
+- Uses powerful models (Claude Sonnet 4, GPT-4o)
+- Best for complex tasks, architecture decisions, debugging
+- Full capability, thorough reasoning
+
+### Rush Mode
+- Uses fast models (Claude Haiku 3.5, GPT-4o-mini)
+- **67% cheaper, 50% faster**
+- Best for simple, well-defined tasks: quick edits, small fixes, simple features
+
+**Switch modes:**
+- Press `tab` to toggle between modes
+- Use `/rush` or `/smart` commands
+- Use `/mode` to open mode selector
+
+## Providers
+
+### Supported Providers
+- **Anthropic** - Claude models (Sonnet, Opus, Haiku)
+- **OpenAI** - GPT-4o, GPT-4-turbo, o1
+- **OpenRouter** - Access 100+ models with one API key
+- **Google** - Gemini models (coming soon)
+
+### Connect a Provider
+1. Press `Ctrl+A` or use `/connect` command
+2. Select provider
+3. Enter API key
 
 ## Feature Progress
 
@@ -12,9 +57,10 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 
 - [x] TUI interface (Textual-based)
 - [x] Session management & persistence
-- [x] Multi-provider support (Anthropic, OpenAI)
+- [x] Multi-provider support (Anthropic, OpenAI, OpenRouter)
+- [x] **Rush Mode** - Fast/cheap mode for simple tasks
 - [x] Agent loop with tool execution
-- [x] Command palette
+- [x] Command palette (`Ctrl+P` or `/`)
 - [x] Sidebar with session list
 - [x] **Tools**: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Diagnostics, CodeSearch, Todo, Ls, Batch
 
@@ -27,13 +73,12 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 - [x] Patch tool
 - [x] Task/sub-agent spawning
 - [x] Todo tracking for agent
-- [ ] MCP (Model Context Protocol) support
+- [x] MCP (Model Context Protocol) support
 - [ ] Skill/plugin system
 - [ ] Snapshot/undo system
 - [ ] Permission system
-- [ ] IDE integrations
 - [ ] Web search tool improvements
-- [ ] Rust core performance 
+- [ ] Rust core performance
 - [X] Web Search
 
 #### Smart Multi-Model Architecture
@@ -41,9 +86,9 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 The system uses task-specialized models across three tiers:
 
 **Tier 1: Agent Modes** (Primary interaction)
-- [ ] **Smart Mode** - Claude Opus 4.5 for unconstrained, state-of-the-art reasoning
-- [ ] **Rush Mode** - Claude Haiku 4.5 for fast, cost-effective small tasks
-- [ ] Mode switching logic based on task complexity
+- [x] **Smart Mode** - Claude Sonnet 4 / GPT-4o for complex reasoning
+- [x] **Rush Mode** - Claude Haiku 3.5 / GPT-4o-mini for fast, cheap tasks
+- [x] Mode switching via `tab` key or `/mode` command
 
 **Tier 2: Feature Models** (Low-latency UI/UX tasks)
 - [ ] **Tab Completion** - Custom fine-tuned model for autocomplete/next-action
@@ -62,8 +107,8 @@ The system uses task-specialized models across three tiers:
 - [ ] **Task Router** - Route tasks based on reasoning depth vs speed tradeoff
 
 **Infrastructure**
-- [ ] Multi-provider model registry (Anthropic, OpenAI, Google)
-- [ ] Model selection logic per task type
+- [x] Multi-provider model registry (Anthropic, OpenAI, OpenRouter, Google)
+- [x] Model selection logic per task type
 - [ ] Subagent spawning and orchestration
 - [ ] Context passing between agents
 - [ ] Cost/latency optimization layer
@@ -101,3 +146,31 @@ The system uses task-specialized models across three tiers:
 6. **Voice interface** - Speech-to-code capabilities
 7. **Custom model fine-tuning** - Train on your codebase patterns
 8. **Offline mode** - Full functionality without internet
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `tab` | Toggle Smart/Rush mode |
+| `Ctrl+P` | Command palette |
+| `Ctrl+A` | Connect provider |
+| `Ctrl+N` | New session |
+| `Ctrl+T` | Toggle theme |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+C` | Quit |
+| `Escape` | Cancel current operation |
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/mode` | Open mode selector |
+| `/rush` | Switch to Rush mode |
+| `/smart` | Switch to Smart mode |
+| `/models` | Select model |
+| `/connect` | Connect a provider |
+| `/session` | Browse sessions |
+| `/new` | New session |
+| `/theme` | Change theme |
+| `/status` | Show current status |
+| `/help` | Show help |

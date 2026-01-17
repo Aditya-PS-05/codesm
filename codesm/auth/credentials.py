@@ -83,3 +83,16 @@ class CredentialStore:
             data["_preferences"] = {}
         data["_preferences"]["theme"] = theme
         self._save(data)
+
+    def get_preferred_mode(self) -> Optional[str]:
+        """Get the user's preferred mode (smart/rush)"""
+        data = self._load()
+        return data.get("_preferences", {}).get("mode")
+
+    def set_preferred_mode(self, mode: str):
+        """Set the user's preferred mode (smart/rush)"""
+        data = self._load()
+        if "_preferences" not in data:
+            data["_preferences"] = {}
+        data["_preferences"]["mode"] = mode
+        self._save(data)

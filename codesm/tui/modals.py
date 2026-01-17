@@ -31,6 +31,41 @@ MODELS_BY_PROVIDER = {
         {"id": "google/gemini-2.0-flash", "name": "Gemini 2.0 Flash", "provider": "Google"},
         {"id": "google/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "provider": "Google"},
     ],
+    "OpenRouter": [
+        {"id": "openrouter/anthropic/claude-sonnet-4", "name": "Claude Sonnet 4", "provider": "OpenRouter"},
+        {"id": "openrouter/anthropic/claude-3.5-haiku", "name": "Claude 3.5 Haiku", "provider": "OpenRouter"},
+        {"id": "openrouter/anthropic/claude-opus-4", "name": "Claude Opus 4", "provider": "OpenRouter"},
+        {"id": "openrouter/openai/gpt-4o", "name": "GPT-4o", "provider": "OpenRouter"},
+        {"id": "openrouter/openai/gpt-4o-mini", "name": "GPT-4o Mini", "provider": "OpenRouter"},
+        {"id": "openrouter/openai/o1", "name": "O1", "provider": "OpenRouter"},
+        {"id": "openrouter/openai/o1-mini", "name": "O1 Mini", "provider": "OpenRouter"},
+        {"id": "openrouter/google/gemini-flash-1.5", "name": "Gemini 1.5 Flash", "provider": "OpenRouter"},
+        {"id": "openrouter/google/gemini-pro-1.5", "name": "Gemini 1.5 Pro", "provider": "OpenRouter"},
+        {"id": "openrouter/deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "OpenRouter"},
+        {"id": "openrouter/meta-llama/llama-3.1-70b-instruct", "name": "Llama 3.1 70B", "provider": "OpenRouter"},
+    ],
+}
+
+# Agent modes - smart vs rush
+AGENT_MODES = {
+    "smart": {
+        "name": "Smart",
+        "description": "Full capability, best for complex tasks",
+        "model_suffix": "",  # Uses current model
+    },
+    "rush": {
+        "name": "Rush",
+        "description": "67% cheaper, 50% faster - for simple tasks",
+        "model_suffix": "haiku",  # Prefers haiku models
+    },
+}
+
+# Rush mode model mappings - maps provider to rush model
+RUSH_MODE_MODELS = {
+    "anthropic": "anthropic/claude-haiku-3.5",
+    "openai": "openai/gpt-4o-mini",
+    "openrouter": "openrouter/anthropic/claude-3.5-haiku",
+    "google": "google/gemini-2.0-flash",
 }
 
 PROVIDERS = {
@@ -1122,3 +1157,154 @@ class PermissionModal(ModalScreen):
 
     def action_deny(self):
         self.dismiss(PermissionResponse.DENY)
+
+
+class ModeSelectModal(ModalScreen):
+    """Modal for selecting agent mode (smart/rush)"""
+
+    CSS = """
+    ModeSelectModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    #modal-container {
+        width: 60;
+        height: auto;
+        background: $surface;
+        border: tall $primary;
+        padding: 1 2;
+    }
+
+    #modal-header {
+        height: 1;
+        width: 100%;
+        margin-bottom: 1;
+    }
+
+    #modal-title {
+        text-style: bold;
+        width: 1fr;
+    }
+
+    #esc-hint {
+        width: auto;
+        color: $text-muted;
+    }
+
+    #mode-list {
+        height: auto;
+        padding: 0;
+    }
+
+    .mode-item {
+        height: 3;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+
+    .mode-item.-selected {
+        background: $secondary;
+        color: $background;
+    }
+
+    .mode-name {
+        text-style: bold;
+    }
+
+    .mode-description {
+        color: $text-muted;
+    }
+
+    .mode-item.-selected .mode-description {
+        color: $background;
+    }
+
+    #mode-footer {
+        height: 1;
+        margin-top: 1;
+        color: $text-muted;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss_modal", "Close", show=False),
+        Binding("up", "move_up", "Up", show=False),
+        Binding("down", "move_down", "Down", show=False),
+        Binding("enter", "select", "Select", show=False),
+        Binding("s", "select_smart", "Smart", show=False),
+        Binding("r", "select_rush", "Rush", show=False),
+    ]
+
+    def __init__(self, current_mode: str = "smart"):
+        super().__init__()
+        self.current_mode = current_mode
+        self.selected_index = 0 if current_mode == "smart" else 1
+        self.modes = ["smart", "rush"]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-container"):
+            with Horizontal(id="modal-header"):
+                yield Static("Select Mode", id="modal-title")
+                yield Static("esc", id="esc-hint")
+            
+            with Vertical(id="mode-list"):
+                # Smart mode
+                with Vertical(id="mode-smart", classes="mode-item"):
+                    yield Static("[bold]Smart[/bold]", classes="mode-name")
+                    yield Static("Full capability, best for complex tasks", classes="mode-description")
+                
+                # Rush mode
+                with Vertical(id="mode-rush", classes="mode-item"):
+                    yield Static("[bold]Rush[/bold] [dim]67% cheaper, 50% faster[/dim]", classes="mode-name")
+                    yield Static("For simple, well-defined tasks", classes="mode-description")
+            
+            with Horizontal(id="mode-footer"):
+                yield Static("[s] smart  [r] rush  [enter] select")
+
+    def on_mount(self):
+        self._update_selection()
+
+    def _update_selection(self):
+        smart = self.query_one("#mode-smart")
+        rush = self.query_one("#mode-rush")
+        
+        if self.selected_index == 0:
+            smart.add_class("-selected")
+            rush.remove_class("-selected")
+        else:
+            smart.remove_class("-selected")
+            rush.add_class("-selected")
+
+    def action_move_up(self):
+        self.selected_index = 0
+        self._update_selection()
+
+    def action_move_down(self):
+        self.selected_index = 1
+        self._update_selection()
+
+    def action_select(self):
+        self.dismiss(self.modes[self.selected_index])
+
+    def action_select_smart(self):
+        self.dismiss("smart")
+
+    def action_select_rush(self):
+        self.dismiss("rush")
+
+    def action_dismiss_modal(self):
+        self.dismiss(None)
+
+    def on_click(self, event) -> None:
+        # Check if click was on a mode item
+        try:
+            smart = self.query_one("#mode-smart")
+            rush = self.query_one("#mode-rush")
+            
+            if smart in event.widget.ancestors_with_self:
+                self.dismiss("smart")
+            elif rush in event.widget.ancestors_with_self:
+                self.dismiss("rush")
+        except Exception:
+            pass
