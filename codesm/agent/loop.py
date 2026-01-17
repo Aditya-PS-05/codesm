@@ -80,9 +80,11 @@ class ReActLoop:
                 ]
             current_messages.append(assistant_msg)
             
-            # Execute tool calls in parallel
+            # Execute tool calls in parallel (limit to avoid API errors)
+            MAX_PARALLEL_CALLS = 64  # API limit is 128, stay well under
+            
             parsed_calls = []
-            for tool_call in tool_calls:
+            for tool_call in tool_calls[:MAX_PARALLEL_CALLS]:  # Cap the number
                 args = tool_call.args
                 if isinstance(args, str):
                     try:
@@ -90,6 +92,15 @@ class ReActLoop:
                     except json.JSONDecodeError:
                         args = {}
                 parsed_calls.append((tool_call.id, tool_call.name, args))
+            
+            if len(tool_calls) > MAX_PARALLEL_CALLS:
+                # Log that we're dropping some calls
+                dropped = len(tool_calls) - MAX_PARALLEL_CALLS
+                parsed_calls.append((
+                    f"dropped_{dropped}",
+                    "_system",
+                    {"message": f"Warning: {dropped} tool calls dropped (max {MAX_PARALLEL_CALLS} per turn)"}
+                ))
             
             # Execute all tools in parallel
             results = await tools.execute_parallel(parsed_calls, context)

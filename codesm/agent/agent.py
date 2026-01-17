@@ -104,6 +104,9 @@ class Agent:
             "session": self.session,
             "session_id": self.session.id,
             "cwd": self.directory,
+            "workspace_dir": str(self.directory),
+            "tools": self.tools,
+            "model": self._model,
         }
         
         # Run ReAct loop

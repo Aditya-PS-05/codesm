@@ -25,7 +25,7 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 - [x] Code search (semantic search)
 - [x] Multi-edit (batch file edits)
 - [x] Patch tool
-- [ ] Task/sub-agent spawning
+- [x] Task/sub-agent spawning
 - [x] Todo tracking for agent
 - [ ] MCP (Model Context Protocol) support
 - [ ] Skill/plugin system

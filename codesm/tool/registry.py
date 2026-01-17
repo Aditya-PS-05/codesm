@@ -35,10 +35,15 @@ class ToolRegistry:
         from .ls import ListTool
         from .batch import BatchTool
         from .patch import PatchTool
+        from .task import TaskTool
 
         for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
+        
+        # Task tool needs special initialization (needs reference to registry)
+        task_tool = TaskTool(parent_tools=self)
+        self._tools[task_tool.name] = task_tool
     
     def register(self, tool: Tool):
         """Register a tool"""

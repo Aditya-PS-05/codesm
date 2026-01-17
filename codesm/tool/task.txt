@@ -1,0 +1,51 @@
+Launch a subagent to handle complex, multi-step tasks autonomously.
+
+Use this tool to delegate work to specialized agents that run independently and return results.
+
+## Available Subagent Types
+
+- **coder**: Implements code changes across multiple files. Use for complex multi-file edits, refactoring, or feature implementation.
+- **researcher**: Searches and analyzes code without making changes. Use for understanding codebases, finding patterns, or investigating bugs.
+- **reviewer**: Reviews code for bugs, security issues, and improvements. Use after making significant changes.
+- **planner**: Creates implementation plans without executing them. Use for complex tasks that need design first.
+
+## When to Use
+
+- Complex multi-step tasks that can run independently
+- Tasks that need focused context (less distraction from main conversation)
+- Parallel work - launch multiple subagents concurrently
+- Specialized work (research, review, planning)
+
+## When NOT to Use
+
+- Simple single-file reads or edits - use Read/Edit directly
+- Quick searches - use grep/glob directly  
+- Tasks requiring back-and-forth with user
+- Very short tasks (< 3 tool calls)
+
+## Parameters
+
+- **subagent_type** (required): One of: coder, researcher, reviewer, planner
+- **prompt** (required): Detailed task description. Include:
+  - What needs to be done
+  - Relevant file paths or search hints
+  - Expected output format
+  - Any constraints or requirements
+- **description** (required): Short 3-5 word summary for display
+
+## Example
+
+```
+Task(
+  subagent_type="coder",
+  description="Add user authentication",
+  prompt="Implement JWT authentication for the API. Files are in src/api/. Add login/logout endpoints, middleware for protected routes, and update the user model. Run tests when done."
+)
+```
+
+## Tips
+
+1. **Be specific** - The subagent has no conversation history context
+2. **Include file hints** - Help the agent find relevant code faster
+3. **State expected output** - Tell the agent what to return
+4. **Run in parallel** - Launch multiple subagents for independent tasks
