@@ -19,13 +19,14 @@ TOOL_ICONS = {
     "websearch": "✓",
     "codesearch": "✓",
     "todo": "✓",
+    "look_at": "✓",
     "default": "✓",
 }
 
 # Define tool categories for grouping
 TOOL_CATEGORIES = {
     "search": ["grep", "glob", "codesearch", "websearch"],
-    "file": ["read", "write", "edit", "multiedit", "ls"],
+    "file": ["read", "write", "edit", "multiedit", "ls", "look_at"],
     "web": ["web", "webfetch", "websearch"],
     "system": ["bash"],
     "task": ["todo"],
@@ -205,6 +206,15 @@ class ToolCallWidget(Static):
             path = args.get("path", ".")
             text.append("List ", style=base_style)
             text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+        
+        elif name == "look_at":
+            path = args.get("path", "")
+            objective = args.get("objective", "")
+            text.append("Look At ", style=base_style)
+            text.append(self._short_path(path), style=f"{CYAN} underline" if not dim else "dim")
+            if objective:
+                obj_display = objective[:40] + "..." if len(objective) > 40 else objective
+                text.append(f' "{obj_display}"', style=f"{YELLOW}" if not dim else "dim")
         
         elif name == "batch":
             calls = args.get("tool_calls", [])
