@@ -107,6 +107,11 @@ class Agent:
         # Add user message to session (saved immediately)
         self.session.add_message(role="user", content=message)
         
+        # Generate title asynchronously using Claude Haiku via OpenRouter
+        # This runs in background and doesn't block the chat
+        import asyncio
+        asyncio.create_task(self.session.generate_title_from_message(message))
+        
         # Get conversation history
         messages = self.session.get_messages()
         

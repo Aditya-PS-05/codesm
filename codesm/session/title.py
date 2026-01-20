@@ -1,8 +1,17 @@
-"""Session title generation - creates meaningful names from user messages"""
+"""Session title generation - uses Claude Haiku via OpenRouter for fast title generation"""
 
+import os
 import re
+import logging
 from datetime import datetime
 
+import httpx
+
+logger = logging.getLogger(__name__)
+
+# Model configuration - uses OpenRouter with Claude Haiku for speed
+TITLE_MODEL = "anthropic/claude-3-5-haiku-20241022"  # Claude 3.5 Haiku - fast & cheap
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 TITLE_PROMPT = """Generate a short, descriptive title for this conversation based on the user's message.
 
@@ -99,31 +108,95 @@ def generate_title_sync(message: str) -> str:
     return "Code assistance"
 
 
-async def generate_title_async(message: str, provider=None) -> str:
-    """Generate a title using LLM if available, fallback to sync"""
-    if not provider:
-        return generate_title_sync(message)
-    
+async def generate_title_with_openrouter(message: str, api_key: str) -> str:
+    """Generate a title using Claude Haiku via OpenRouter."""
     try:
-        # Use a small/fast model call for title generation
-        prompt = TITLE_PROMPT.format(message=message[:500])
-        
-        title = ""
-        async for chunk in provider.stream(
-            system="You generate short, descriptive titles. Output only the title, nothing else.",
-            messages=[{"role": "user", "content": prompt}],
-            tools=None,
-        ):
-            if chunk.type == "text":
-                title += chunk.content
-        
-        # Clean up the title
-        title = title.strip().strip('"\'')
-        
-        # Enforce max length
-        if len(title) > 50:
-            title = title[:47] + "..."
-        
-        return title if title else generate_title_sync(message)
-    except Exception:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                OPENROUTER_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/codesm",
+                    "X-Title": "codesm",
+                },
+                json={
+                    "model": TITLE_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You generate short, descriptive titles. Output only the title, nothing else."
+                        },
+                        {
+                            "role": "user", 
+                            "content": TITLE_PROMPT.format(message=message[:500])
+                        },
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 60,
+                },
+            )
+            
+            if response.status_code != 200:
+                logger.debug(f"OpenRouter title API error: {response.status_code}")
+                return generate_title_sync(message)
+            
+            data = response.json()
+            title = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            
+            # Clean up the title
+            title = title.strip().strip('"\'')
+            
+            # Remove any prefix like "Title:" that the model might add
+            if title.lower().startswith("title:"):
+                title = title[6:].strip()
+            
+            # Enforce max length
+            if len(title) > 50:
+                title = title[:47] + "..."
+            
+            return title if title else generate_title_sync(message)
+            
+    except Exception as e:
+        logger.debug(f"Title generation failed: {e}")
         return generate_title_sync(message)
+
+
+async def generate_title_async(message: str, provider=None) -> str:
+    """Generate a title using LLM if available, fallback to sync.
+    
+    Uses OpenRouter with Claude Haiku for fast, cheap title generation.
+    Falls back to heuristic-based generation if no API key available.
+    """
+    # Try OpenRouter first (preferred - uses Claude Haiku)
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if api_key:
+        return await generate_title_with_openrouter(message, api_key)
+    
+    # Fallback to provider if passed
+    if provider:
+        try:
+            prompt = TITLE_PROMPT.format(message=message[:500])
+            
+            title = ""
+            async for chunk in provider.stream(
+                system="You generate short, descriptive titles. Output only the title, nothing else.",
+                messages=[{"role": "user", "content": prompt}],
+                tools=None,
+            ):
+                if chunk.type == "text":
+                    title += chunk.content
+            
+            # Clean up the title
+            title = title.strip().strip('"\'')
+            
+            # Enforce max length
+            if len(title) > 50:
+                title = title[:47] + "..."
+            
+            return title if title else generate_title_sync(message)
+        except Exception:
+            pass
+    
+    # Final fallback to sync heuristics
+    return generate_title_sync(message)

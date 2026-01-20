@@ -92,8 +92,8 @@ The system uses task-specialized models across three tiers:
 
 **Tier 2: Feature Models** (Low-latency UI/UX tasks)
 - [x] **Tab Completion** - Custom fine-tuned model for autocomplete/next-action
-- [ ] **Code Review** - Gemini 3 Pro for bug detection and review assistance
-- [ ] **Titling** - Claude Haiku 4.5 for fast thread title generation
+- [x] **Code Review** - Gemini 2.5 Pro (via OpenRouter) for bug detection and review assistance
+- [x] **Titling** - Claude 3.5 Haiku (via OpenRouter) for fast thread title generation
 - [ ] **Look At** - Gemini 3 Flash for image/PDF/media analysis
 
 **Tier 3: Specialized Subagents** (Background processing)

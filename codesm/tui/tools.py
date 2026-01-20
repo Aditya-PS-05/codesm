@@ -584,6 +584,92 @@ class TreeConnectorWidget(Static):
         return text
 
 
+class CodeReviewWidget(Static):
+    """Widget to display code review results"""
+
+    DEFAULT_CSS = """
+    CodeReviewWidget {
+        height: auto;
+        padding: 1 2;
+        margin: 1 0;
+        border-left: heavy $warning;
+    }
+    
+    CodeReviewWidget.passed {
+        border-left: heavy $success;
+    }
+    
+    CodeReviewWidget.critical {
+        border-left: heavy $error;
+    }
+    """
+
+    def __init__(self, review_result, **kwargs):
+        super().__init__(**kwargs)
+        self.review_result = review_result
+        if review_result.has_critical:
+            self.add_class("critical")
+        elif not review_result.issues:
+            self.add_class("passed")
+
+    def render(self) -> Text:
+        text = Text()
+        result = self.review_result
+        
+        if not result.issues:
+            text.append("✓ ", style=f"bold {GREEN}")
+            text.append("Code review passed", style="bold")
+            text.append(f" - no issues found in {len(result.files_reviewed)} file(s)", style="dim")
+            return text
+        
+        # Header
+        text.append(":: ", style="bold white")
+        text.append("Code Review", style="bold white")
+        text.append(f" ({len(result.issues)} issue(s))\n", style="dim")
+        
+        # Group issues by severity
+        critical = [i for i in result.issues if i.severity == "critical"]
+        warnings = [i for i in result.issues if i.severity == "warning"]
+        suggestions = [i for i in result.issues if i.severity == "suggestion"]
+        
+        if critical:
+            text.append("\n")
+            text.append("Critical Issues:\n", style="bold red")
+            for issue in critical:
+                loc = f"{issue.file}:{issue.line}" if issue.line else issue.file
+                text.append("  ✗ ", style="bold red")
+                text.append(f"[{loc}] ", style=CYAN)
+                text.append(f"{issue.description}\n", style="")
+                if issue.fix:
+                    text.append(f"    → {issue.fix}\n", style="dim")
+        
+        if warnings:
+            text.append("\n")
+            text.append("Warnings:\n", style=f"bold {YELLOW}")
+            for issue in warnings:
+                loc = f"{issue.file}:{issue.line}" if issue.line else issue.file
+                text.append("  ⚠ ", style=f"bold {YELLOW}")
+                text.append(f"[{loc}] ", style=CYAN)
+                text.append(f"{issue.description}\n", style="")
+                if issue.fix:
+                    text.append(f"    → {issue.fix}\n", style="dim")
+        
+        if suggestions:
+            text.append("\n")
+            text.append("Suggestions:\n", style="bold #8aadf4")
+            for issue in suggestions:
+                loc = f"{issue.file}:{issue.line}" if issue.line else issue.file
+                text.append("  • ", style="#8aadf4")
+                text.append(f"[{loc}] ", style=CYAN)
+                text.append(f"{issue.description}\n", style="dim")
+        
+        if result.summary:
+            text.append("\n")
+            text.append(result.summary, style="dim italic")
+        
+        return text
+
+
 class StreamingTextWidget(Static):
     """Widget to display streaming text response with live updates.
     

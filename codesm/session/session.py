@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
 
 from codesm.storage.storage import Storage
-from codesm.session.title import create_default_title, is_default_title, generate_title_sync
+from codesm.session.title import create_default_title, is_default_title, generate_title_sync, generate_title_async
 
 if TYPE_CHECKING:
     from codesm.snapshot import Snapshot
@@ -128,6 +128,25 @@ class Session:
         """Update session title"""
         self.title = title
         self.save()
+    
+    async def generate_title_from_message(self, message: str):
+        """Generate a title from the first user message using LLM.
+        
+        Uses Claude Haiku via OpenRouter for fast title generation.
+        Only generates if title is still the default.
+        """
+        if self._title_generated or not is_default_title(self.title):
+            return
+        
+        try:
+            title = await generate_title_async(message)
+            if title and title != self.title:
+                self.title = title
+                self._title_generated = True
+                self.save()
+        except Exception:
+            # Fallback already handled in generate_title_async
+            pass
     
     def clear(self):
         """Clear all messages"""

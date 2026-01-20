@@ -17,7 +17,8 @@ from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
 from .tools import (
     ToolCallWidget, ToolResultWidget, ThinkingWidget, TodoListWidget,
-    ActionHeaderWidget, TreeConnectorWidget, StreamingTextWidget, TOOL_CATEGORIES
+    ActionHeaderWidget, TreeConnectorWidget, StreamingTextWidget, CodeReviewWidget,
+    TOOL_CATEGORIES
 )
 from .autocomplete import AutocompletePopup
 from codesm.auth import ClaudeOAuth
@@ -974,6 +975,10 @@ class CodesmApp(App):
             chat_container.scroll_end(animate=False)
 
             logger.info(f"Messages container now has {len(messages_container.children)} children")
+            
+            # Run code review if files were edited
+            if tools_used and any(t in tools_used for t in ["edit", "write", "multiedit"]):
+                await self._run_code_review(messages_container, chat_container)
 
         except Exception as e:
             logger.error(f"Error in chat: {e}", exc_info=True)
@@ -1055,6 +1060,64 @@ class CodesmApp(App):
         try:
             if widget:
                 widget.toggle_cursor()
+        except Exception:
+            pass
+
+    async def _run_code_review(self, messages_container, chat_container):
+        """Run code review on files edited during the session."""
+        try:
+            from codesm.review import CodeReviewer
+            
+            # Check if we have an OpenRouter API key
+            import os
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                logger.debug("Skipping code review: no OPENROUTER_API_KEY set")
+                return
+            
+            # Show review indicator
+            review_indicator = ThinkingWidget("Reviewing code changes...")
+            review_indicator.id = "review-indicator"
+            await messages_container.mount(review_indicator)
+            chat_container.scroll_end(animate=False)
+            
+            # Start spinner animation
+            review_timer = self.set_interval(0.08, lambda: self._animate_review(review_indicator))
+            
+            try:
+                reviewer = CodeReviewer(api_key=api_key)
+                result = await reviewer.review_session_changes(self.agent.session)
+                
+                # Stop timer and remove indicator
+                review_timer.stop()
+                await review_indicator.remove()
+                
+                # Show review results
+                if result.issues or result.files_reviewed:
+                    review_widget = CodeReviewWidget(result)
+                    await messages_container.mount(review_widget)
+                    chat_container.scroll_end(animate=False)
+                    
+                    # If critical issues, notify user
+                    if result.has_critical:
+                        self.notify("⚠️ Code review found critical issues!", severity="warning")
+                    elif result.has_warnings:
+                        self.notify("Code review found some warnings", severity="information")
+            except Exception as e:
+                review_timer.stop()
+                await review_indicator.remove()
+                logger.error(f"Code review failed: {e}")
+                
+        except ImportError as e:
+            logger.debug(f"Code review not available: {e}")
+        except Exception as e:
+            logger.error(f"Code review error: {e}")
+
+    def _animate_review(self, widget):
+        """Animate the review indicator."""
+        try:
+            if widget:
+                widget.next_frame()
         except Exception:
             pass
 
