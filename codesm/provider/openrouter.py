@@ -4,12 +4,18 @@ from typing import AsyncIterator
 import json
 import os
 import logging
+import time
 import openai
 
 from .base import Provider, StreamChunk
 from codesm.auth.credentials import CredentialStore
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimation (~4 chars per token)"""
+    return max(1, len(text) // 4)
 
 
 class OpenRouterProvider(Provider):
@@ -120,8 +126,12 @@ class OpenRouterProvider(Provider):
         tool_calls_accumulator: dict[int, dict] = {}
 
         logger.info("OpenRouter API request sent, awaiting response...")
+        start_time = time.time()
         stream = await self.client.chat.completions.create(**kwargs)
         logger.info("OpenRouter stream started, receiving chunks...")
+        
+        # Track output for usage recording
+        output_text = ""
 
         async for chunk in stream:
             delta = chunk.choices[0].delta if chunk.choices else None
@@ -130,6 +140,7 @@ class OpenRouterProvider(Provider):
             
             # Handle text content
             if delta.content:
+                output_text += delta.content
                 yield StreamChunk(type="text", content=delta.content)
             
             # Handle tool calls
@@ -168,3 +179,24 @@ class OpenRouterProvider(Provider):
                 name=tc["name"],
                 args=args,
             )
+        
+        # Record usage metrics
+        try:
+            from codesm.agent.optimizer import record_usage
+            
+            # Estimate input tokens from messages
+            input_text = system + " ".join(
+                m.get("content", "") for m in full_messages if m.get("content")
+            )
+            input_tokens = _estimate_tokens(input_text)
+            output_tokens = _estimate_tokens(output_text)
+            latency_ms = (time.time() - start_time) * 1000
+            
+            record_usage(
+                model=f"openrouter/{self.model}",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=latency_ms,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record usage: {e}")

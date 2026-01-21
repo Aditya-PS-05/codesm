@@ -17,6 +17,7 @@ COMMANDS = [
     {"cmd": "/agents", "desc": "list agents"},
     {"cmd": "/session", "desc": "list sessions"},
     {"cmd": "/status", "desc": "show status"},
+    {"cmd": "/cost", "desc": "show cost/usage stats"},
     {"cmd": "/theme", "desc": "toggle theme"},
     {"cmd": "/editor", "desc": "open editor"},
     {"cmd": "/connect", "desc": "connect to a provider"},

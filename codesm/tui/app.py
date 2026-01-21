@@ -566,6 +566,8 @@ class CodesmApp(App):
         elif cmd == "/status":
             mode_str = "Rush" if self._mode == "rush" else "Smart"
             self.notify(f"Mode: {mode_str} | Model: {self.model} | Dir: {self.directory}")
+        elif cmd == "/cost":
+            self._show_cost_stats()
         elif cmd == "/init":
             self._run_init_command()
         elif cmd == "/agents":
@@ -620,6 +622,33 @@ class CodesmApp(App):
         logger.info(f"Mode switched to {mode_name}, using model: {self.model}")
         self.notify(f"{mode_name}: {model_short}")
 
+    def _show_cost_stats(self):
+        """Show cost and usage statistics"""
+        try:
+            from codesm.agent.optimizer import get_optimizer
+            
+            optimizer = get_optimizer()
+            daily = optimizer.get_daily_stats()
+            session_stats = optimizer.get_session_stats()
+            
+            # Format output
+            daily_cost = optimizer.format_cost(daily['total_cost'])
+            budget_pct = daily['budget_used_pct']
+            remaining = optimizer.format_cost(daily['budget_remaining'])
+            
+            session_cost = optimizer.format_cost(session_stats.total_cost)
+            total_tokens = session_stats.total_input_tokens + session_stats.total_output_tokens
+            
+            msg = (
+                f"💰 Session: {session_cost} ({total_tokens:,} tokens) | "
+                f"Today: {daily_cost} ({budget_pct:.0f}% of budget) | "
+                f"Remaining: {remaining}"
+            )
+            self.notify(msg)
+            
+        except Exception as e:
+            self.notify(f"Cost tracking unavailable: {e}")
+    
     def _run_init_command(self):
         """Initialize AGENTS.md for the current project"""
         from codesm.rules import init_agents_md, save_agents_md

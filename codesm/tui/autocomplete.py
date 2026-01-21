@@ -211,6 +211,7 @@ class AutocompletePopup(ModalScreen[str | None]):
             AutocompleteOption("/theme", "/theme", "Change theme"),
             AutocompleteOption("/init", "/init", "Create AGENTS.md"),
             AutocompleteOption("/status", "/status", "Show status"),
+            AutocompleteOption("/cost", "/cost", "Show cost/usage"),
             AutocompleteOption("/help", "/help", "Show help"),
         ]
         return commands
