@@ -973,8 +973,8 @@ class CodesmApp(App):
                             result_summary = self._get_result_summary(chunk.name, chunk.content)
                             tool_widgets[chunk.id].mark_completed(result_summary=result_summary)
 
-                            # Only show full result for edit/write/bash (not glob/grep)
-                            if chunk.name in ["edit", "write", "bash", "mcp_execute"]:
+                            # Only show full result for edit/write/bash/mermaid (not glob/grep)
+                            if chunk.name in ["edit", "write", "bash", "mcp_execute", "mermaid", "diagram"]:
                                 from .chat import styled_markdown
                                 result_msg = Static(styled_markdown(chunk.content))
                                 result_msg.styles.padding = (0, 2, 1, 4)

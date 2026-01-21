@@ -1,5 +1,7 @@
 """Mermaid tool - generate diagrams from code"""
 
+import base64
+import json
 import logging
 import subprocess
 import tempfile
@@ -201,6 +203,13 @@ class MermaidTool(Tool):
         
         return None
     
+    def _generate_mermaid_live_url(self, code: str) -> str:
+        """Generate a mermaid.live edit URL from diagram code"""
+        state = {"code": code}
+        state_json = json.dumps(state, separators=(",", ":"))
+        encoded = base64.urlsafe_b64encode(state_json.encode()).decode()
+        return f"https://mermaid.live/edit#base64:{encoded}"
+
     def _format_output(
         self,
         code: str,
@@ -217,6 +226,11 @@ class MermaidTool(Tool):
             parts.append("")
         
         parts.append(f"**Diagram Type:** {diagram_type}")
+        parts.append("")
+        
+        # Generate mermaid.live link
+        live_url = self._generate_mermaid_live_url(code)
+        parts.append(f"**[View/Edit on Mermaid Live]({live_url})**")
         parts.append("")
         
         # Add the mermaid code block
