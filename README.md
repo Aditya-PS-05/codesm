@@ -99,7 +99,7 @@ The system uses task-specialized models across three tiers:
 **Tier 3: Specialized Subagents** (Background processing)
 - [x] **Oracle** - GPT-5/o1 for complex reasoning, planning, debugging
 - [x] **Finder/Search** - Gemini 2.5 Flash for high-speed codebase retrieval
-- [ ] **Librarian** - Claude Sonnet 4.5 for multi-repo research & external code
+- [x] **Librarian** - Claude Sonnet 4 for multi-repo research & external code
 
 **Workflow Management**
 - [ ] **Handoff System** - Gemini 2.5 Flash for context analysis & task continuation
@@ -149,7 +149,6 @@ The system uses task-specialized models across three tiers:
 ### Important (Competitive Advantages)
 
 #### Intelligence Layer
-- [ ] **Librarian Subagent** - Multi-repo research with GitHub API integration
 - [ ] **Code Review Agent** - Automatic PR review with actionable feedback
 - [ ] **Test Generation** - Auto-generate tests for new/changed code
 - [ ] **Bug Localization** - Given an error, find the root cause automatically
