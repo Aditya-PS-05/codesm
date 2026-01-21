@@ -33,8 +33,8 @@ class TaskTool(Tool):
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "enum": ["coder", "researcher", "reviewer", "planner", "oracle"],
-                    "description": "Type of subagent: coder (implements code), researcher (analyzes without changes), reviewer (finds issues), planner (creates plans), oracle (deep reasoning with o1)",
+                    "enum": ["coder", "researcher", "reviewer", "planner", "oracle", "finder"],
+                    "description": "Type of subagent: coder (implements code), researcher (analyzes without changes), reviewer (finds issues), planner (creates plans), oracle (deep reasoning with o1), finder (fast search with Gemini Flash)",
                 },
                 "prompt": {
                     "type": "string",
@@ -126,7 +126,7 @@ class ParallelTaskTool(Tool):
                         "properties": {
                             "subagent_type": {
                                 "type": "string",
-                                "enum": ["coder", "researcher", "reviewer", "planner", "oracle"],
+                                "enum": ["coder", "researcher", "reviewer", "planner", "oracle", "finder"],
                             },
                             "prompt": {"type": "string"},
                             "description": {"type": "string"},

@@ -40,6 +40,7 @@ class ToolRegistry:
         from .undo import UndoTool
         from .lookat import LookAtTool
         from .oracle import OracleTool
+        from .finder import FinderTool
 
         for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, LookAtTool]:
             tool = tool_class()
@@ -52,6 +53,10 @@ class ToolRegistry:
         # Oracle tool also needs reference to registry
         oracle_tool = OracleTool(parent_tools=self)
         self._tools[oracle_tool.name] = oracle_tool
+        
+        # Finder tool needs reference to registry for grep/glob access
+        finder_tool = FinderTool(parent_tools=self)
+        self._tools[finder_tool.name] = finder_tool
     
     def register(self, tool: Tool):
         """Register a tool"""

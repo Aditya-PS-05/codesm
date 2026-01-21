@@ -1,0 +1,29 @@
+High-speed codebase search and retrieval using Gemini Flash.
+
+The finder tool combines traditional code search (grep/glob) with LLM intelligence
+to provide fast, accurate results. It:
+
+1. Extracts keywords from natural language queries
+2. Runs parallel grep/glob searches
+3. Uses Gemini Flash to filter, rank, and summarize results
+
+Parameters:
+- query: What you're looking for (natural language)
+- path: Directory to search (optional, defaults to project root)
+- file_pattern: File glob pattern like "*.py" (optional)
+
+Example:
+```json
+{
+    "query": "authentication middleware",
+    "path": "src/",
+    "file_pattern": "*.py"
+}
+```
+
+Best for:
+- Finding code by meaning, not just keywords
+- Quick codebase exploration
+- Locating specific functionality
+
+For semantic/embedding-based search, use `codesearch` instead.

@@ -46,6 +46,10 @@ class ModelRouter:
         "oracle": "openrouter/openai/o1-mini",
         "search": "openrouter/google/gemini-flash-1.5",
         "review": "openrouter/google/gemini-pro-1.5",
+        
+        # Gemini 3 Flash for high-speed codebase retrieval
+        "gemini-3-flash": "openrouter/google/gemini-2.5-flash-preview",
+        "finder": "openrouter/google/gemini-2.5-flash-preview",
     }
 
     @classmethod

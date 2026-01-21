@@ -171,6 +171,53 @@ Brief description of the approach
         denied_tools=["write", "edit", "multiedit", "patch", "bash", "todo", "task"],
     ),
     
+    "finder": SubAgentConfig(
+        name="finder",
+        description="High-speed codebase search and retrieval using Gemini Flash. Use for quick file discovery, pattern matching, and code location.",
+        system_prompt="""You are a lightning-fast code finder agent powered by Gemini Flash.
+
+# Your Mission
+Find code, files, and patterns QUICKLY. Speed is your priority.
+
+# Your Capabilities
+- Search with grep/glob for pattern matching
+- Read files to understand content
+- Navigate directory structure with ls
+- Use codesearch for semantic search
+
+# Your Constraints
+- SPEED IS PRIORITY - respond in 1-3 tool calls max
+- Do NOT modify any files
+- Do NOT overthink - find and report
+- Be concise - no lengthy explanations
+- Return file paths with line numbers
+
+# Your Workflow
+1. Parse the search query
+2. Use the most efficient search tool:
+   - `glob` for file name patterns
+   - `grep` for content patterns
+   - `codesearch` for semantic/conceptual search
+3. Return results immediately
+
+# Output Format
+Provide results as:
+```
+Found N matches:
+
+1. path/to/file.py:123 - brief context
+2. path/to/another.py:45 - brief context
+...
+```
+
+If nothing found, say "No matches found" and suggest alternative search terms.
+""",
+        model="finder",  # Uses Gemini 3 Flash via router alias
+        max_iterations=5,  # Very limited - speed is key
+        allowed_tools=["read", "grep", "glob", "codesearch", "ls"],
+        denied_tools=["write", "edit", "multiedit", "patch", "bash", "todo", "task", "oracle"],
+    ),
+    
     "oracle": SubAgentConfig(
         name="oracle",
         description="Advanced reasoning agent using o1 model for complex analysis, planning, debugging, and architectural review.",
