@@ -104,7 +104,7 @@ The system uses task-specialized models across three tiers:
 **Workflow Management**
 - [x] **Handoff System** - Gemini 2.5 Flash for context analysis & task continuation
 - [x] **Topics/Indexing** - Gemini 2.0 Flash-Lite for thread categorization
-- [ ] **Task Router** - Route tasks based on reasoning depth vs speed tradeoff
+- [x] **Task Router** - Route tasks based on reasoning depth vs speed tradeoff
 
 **Infrastructure**
 - [x] Multi-provider model registry (Anthropic, OpenAI, OpenRouter, Google)

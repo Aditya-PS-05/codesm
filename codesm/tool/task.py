@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class TaskTool(Tool):
     name = "task"
-    description = "Launch a subagent to handle a complex task autonomously."
+    description = "Launch a subagent to handle a complex task autonomously. Use auto_route=true to let the router pick the best subagent."
     
     def __init__(self, parent_tools: "ToolRegistry | None" = None, parent_model: str = "anthropic/claude-sonnet-4-20250514"):
         super().__init__()
@@ -33,8 +33,8 @@ class TaskTool(Tool):
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "enum": ["coder", "researcher", "reviewer", "planner", "oracle", "finder"],
-                    "description": "Type of subagent: coder (implements code), researcher (analyzes without changes), reviewer (finds issues), planner (creates plans), oracle (deep reasoning with o1), finder (fast search with Gemini Flash)",
+                    "enum": ["coder", "researcher", "reviewer", "planner", "oracle", "finder", "librarian", "auto"],
+                    "description": "Type of subagent. Use 'auto' to let the router pick the best one based on task complexity.",
                 },
                 "prompt": {
                     "type": "string",
@@ -50,6 +50,7 @@ class TaskTool(Tool):
     
     async def execute(self, args: dict, context: dict) -> str:
         from codesm.agent.subagent import SubAgent, get_subagent_config, list_subagent_configs
+        from codesm.agent.router import route_task, TaskComplexity
         
         subagent_type = args.get("subagent_type", "")
         prompt = args.get("prompt", "")
@@ -61,6 +62,22 @@ class TaskTool(Tool):
         
         if not prompt:
             return "Error: prompt is required - describe what the subagent should do"
+        
+        # Auto-routing: let the router pick the best subagent
+        routing_info = ""
+        if subagent_type == "auto":
+            try:
+                decision = await route_task(prompt)
+                if decision.recommended_subagent:
+                    subagent_type = decision.recommended_subagent
+                else:
+                    # Default to coder for tasks without specific subagent
+                    subagent_type = "coder"
+                routing_info = f"\n_Routed: {decision.task_type.value} ({decision.complexity.value}) → {subagent_type}_"
+                logger.info(f"Auto-routed task to {subagent_type}: {decision.reasoning}")
+            except Exception as e:
+                logger.warning(f"Auto-routing failed, defaulting to coder: {e}")
+                subagent_type = "coder"
         
         # Get subagent config
         config = get_subagent_config(subagent_type)
@@ -93,7 +110,7 @@ class TaskTool(Tool):
             
             result = await subagent.run(prompt)
             
-            return self._format_result(description, subagent_type, result)
+            return self._format_result(description, subagent_type, result) + routing_info
             
         except Exception as e:
             logger.exception(f"Subagent {subagent_type} failed")
@@ -126,7 +143,7 @@ class ParallelTaskTool(Tool):
                         "properties": {
                             "subagent_type": {
                                 "type": "string",
-                                "enum": ["coder", "researcher", "reviewer", "planner", "oracle", "finder"],
+                                "enum": ["coder", "researcher", "reviewer", "planner", "oracle", "finder", "librarian", "auto"],
                             },
                             "prompt": {"type": "string"},
                             "description": {"type": "string"},
@@ -157,7 +174,19 @@ class ParallelTaskTool(Tool):
         
         async def run_task(task: dict) -> tuple[str, str]:
             """Run a single task and return (description, result)"""
-            config = get_subagent_config(task["subagent_type"])
+            from codesm.agent.router import route_task
+            
+            subagent_type = task["subagent_type"]
+            
+            # Auto-routing support
+            if subagent_type == "auto":
+                try:
+                    decision = await route_task(task["prompt"])
+                    subagent_type = decision.recommended_subagent or "coder"
+                except Exception:
+                    subagent_type = "coder"
+            
+            config = get_subagent_config(subagent_type)
             if not config:
                 return (task["description"], f"Error: Unknown subagent type")
             
