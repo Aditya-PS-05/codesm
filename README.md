@@ -109,8 +109,8 @@ The system uses task-specialized models across three tiers:
 **Infrastructure**
 - [x] Multi-provider model registry (Anthropic, OpenAI, OpenRouter, Google)
 - [x] Model selection logic per task type
-- [ ] Subagent spawning and orchestration
-- [ ] Context passing between agents
+- [x] Subagent spawning and orchestration
+- [x] Context passing between agents
 - [ ] Cost/latency optimization layer
 
 #### Other Smart Features

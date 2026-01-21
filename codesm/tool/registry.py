@@ -42,6 +42,7 @@ class ToolRegistry:
         from .oracle import OracleTool
         from .finder import FinderTool
         from .handoff import HandoffTool
+        from .orchestrate import OrchestrateTool, PipelineTool
 
         for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, LookAtTool]:
             tool = tool_class()
@@ -62,6 +63,13 @@ class ToolRegistry:
         # Handoff tool for context transfer to new threads
         handoff_tool = HandoffTool(parent_tools=self)
         self._tools[handoff_tool.name] = handoff_tool
+        
+        # Orchestration tools for multi-subagent coordination
+        orchestrate_tool = OrchestrateTool(parent_tools=self)
+        self._tools[orchestrate_tool.name] = orchestrate_tool
+        
+        pipeline_tool = PipelineTool(parent_tools=self)
+        self._tools[pipeline_tool.name] = pipeline_tool
     
     def register(self, tool: Tool):
         """Register a tool"""
