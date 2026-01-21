@@ -8,6 +8,7 @@ Use this tool to delegate work to specialized agents that run independently and 
 - **researcher**: Searches and analyzes code without making changes. Use for understanding codebases, finding patterns, or investigating bugs.
 - **reviewer**: Reviews code for bugs, security issues, and improvements. Use after making significant changes.
 - **planner**: Creates implementation plans without executing them. Use for complex tasks that need design first.
+- **oracle**: Advanced reasoning using o1 model for deep analysis, debugging complex issues, and architectural review.
 
 ## When to Use
 

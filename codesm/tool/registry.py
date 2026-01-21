@@ -39,6 +39,7 @@ class ToolRegistry:
         from .skill import SkillTool
         from .undo import UndoTool
         from .lookat import LookAtTool
+        from .oracle import OracleTool
 
         for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, LookAtTool]:
             tool = tool_class()
@@ -47,6 +48,10 @@ class ToolRegistry:
         # Task tool needs special initialization (needs reference to registry)
         task_tool = TaskTool(parent_tools=self)
         self._tools[task_tool.name] = task_tool
+        
+        # Oracle tool also needs reference to registry
+        oracle_tool = OracleTool(parent_tools=self)
+        self._tools[oracle_tool.name] = oracle_tool
     
     def register(self, tool: Tool):
         """Register a tool"""

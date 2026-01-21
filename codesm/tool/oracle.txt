@@ -1,0 +1,66 @@
+Consult the Oracle - an AI advisor powered by OpenAI's o1 reasoning model that can plan, review, and provide expert guidance.
+
+The Oracle acts as your senior engineering advisor and can help with:
+
+## When to Use the Oracle
+
+- **Code reviews and architecture feedback** - Get expert analysis of your code structure and design
+- **Finding bugs across multiple files** - Debug complex issues that span the codebase
+- **Planning complex implementations** - Design approaches for new features or refactoring
+- **Analyzing code quality** - Get suggestions for improvements
+- **Answering complex technical questions** - Deep reasoning on difficult problems
+
+## When NOT to Use the Oracle
+
+- Simple file reading or searching (use Read or Grep directly)
+- Codebase searches (use codesearch or grep)
+- Web browsing (use webfetch or websearch)
+- Code modifications (use edit or task with coder subagent)
+
+## Parameters
+
+- **task** (required): The task or question you want the Oracle to help with. Be specific about what kind of guidance, review, or planning you need.
+- **context** (optional): Background information about the current situation, what you've tried, or relevant context.
+- **files** (optional): List of specific file paths the Oracle should examine as part of its analysis.
+
+## Examples
+
+### Review authentication architecture
+```
+oracle(
+  task="Review the authentication architecture and suggest improvements",
+  files=["src/auth/index.ts", "src/auth/jwt.ts"]
+)
+```
+
+### Plan a new feature
+```
+oracle(
+  task="Plan the implementation of real-time collaboration features",
+  context="We're using WebSockets and need to sync document edits across users"
+)
+```
+
+### Debug failing tests
+```
+oracle(
+  task="Help debug why tests are failing",
+  context="Tests fail with 'undefined is not a function' after refactoring the auth module",
+  files=["src/auth/auth.test.ts"]
+)
+```
+
+### Analyze performance
+```
+oracle(
+  task="Analyze performance bottlenecks in the data processing pipeline",
+  context="Users report slow response times when processing large datasets"
+)
+```
+
+## Tips
+
+1. **Be specific** - Clearly describe what you need help with
+2. **Provide context** - Include relevant background information
+3. **List files** - If specific files are involved, include their paths
+4. **Describe symptoms** - For debugging, explain what's happening vs. expected behavior

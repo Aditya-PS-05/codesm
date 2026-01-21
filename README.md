@@ -97,7 +97,7 @@ The system uses task-specialized models across three tiers:
 - [x] **Look At** - Gemini 2.0 Flash (via OpenRouter) for image/PDF/media analysis
 
 **Tier 3: Specialized Subagents** (Background processing)
-- [ ] **Oracle** - GPT-5/o1 for complex reasoning, planning, debugging
+- [x] **Oracle** - GPT-5/o1 for complex reasoning, planning, debugging
 - [ ] **Finder/Search** - Gemini 3 Flash for high-speed codebase retrieval
 - [ ] **Librarian** - Claude Sonnet 4.5 for multi-repo research & external code
 
