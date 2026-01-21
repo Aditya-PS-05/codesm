@@ -53,6 +53,9 @@ class ModelRouter:
         
         # Handoff system - context analysis and task continuation
         "handoff": "openrouter/google/gemini-2.5-flash-preview",
+        
+        # Topics/Indexing - thread categorization (Flash-Lite for speed/cost)
+        "topics": "openrouter/google/gemini-2.0-flash-lite-001",
     }
 
     @classmethod

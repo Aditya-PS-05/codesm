@@ -12,11 +12,12 @@ class SessionListItem(Static):
 
     can_focus = True
 
-    def __init__(self, session_id: str, title: str, updated_at: str = "", **kwargs):
+    def __init__(self, session_id: str, title: str, updated_at: str = "", topics: dict | None = None, **kwargs):
         super().__init__(**kwargs)
         self.session_id = session_id
         self.title = title
         self.updated_at = updated_at
+        self.topics = topics
         self._selected = False
         self._pending_delete = False
 
@@ -33,9 +34,15 @@ class SessionListItem(Static):
         except:
             date_str = "Unknown"
         
+        # Format topic badge
+        topic_badge = ""
+        if self.topics and self.topics.get("primary"):
+            primary = self.topics["primary"]
+            topic_badge = f" [cyan]#{primary}[/]"
+        
         if self._pending_delete:
             return f"  [bold white]{self.title}[/]\n  [white]Press ctrl+d again to confirm delete[/]"
-        return f"  [bold]{self.title}[/]\n  [dim]{date_str}[/]"
+        return f"  [bold]{self.title}[/]{topic_badge}\n  [dim]{date_str}[/]"
 
     def set_selected(self, selected: bool):
         self._selected = selected
@@ -264,7 +271,8 @@ class SessionListModal(ModalScreen):
             item = SessionListItem(
                 session["id"],
                 session.get("title", "Untitled Session"),
-                session.get("updated_at", "")
+                session.get("updated_at", ""),
+                session.get("topics"),
             )
             container.mount(item)
             self.visible_items.append(item)

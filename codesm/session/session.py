@@ -23,6 +23,7 @@ class Session:
     messages: list[dict] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    topics: Optional[dict] = field(default=None, repr=False)  # TopicInfo as dict
     _title_generated: bool = field(default=False, repr=False)
     _snapshot: Optional["Snapshot"] = field(default=None, repr=False)
     _current_snapshot_hash: Optional[str] = field(default=None, repr=False)
@@ -60,17 +61,35 @@ class Session:
         )
     
     @classmethod
-    def list_sessions(cls) -> list[dict]:
-        """List all saved sessions"""
+    def list_sessions(cls, topic_filter: str | None = None) -> list[dict]:
+        """List all saved sessions, optionally filtered by topic"""
+        from codesm.session.topics import get_topic_index
+        
         keys = Storage.list(["session"])
         sessions = []
+        topic_index = get_topic_index()
+        
         for key in keys:
             data = Storage.read(key)
             if data:
+                session_id = data["id"]
+                
+                # Get topics for this session
+                topic_info = topic_index.get_topics(session_id)
+                topics_dict = topic_info.to_dict() if topic_info else None
+                
+                # Apply topic filter if specified
+                if topic_filter:
+                    if not topic_info:
+                        continue
+                    if topic_info.primary != topic_filter and topic_filter not in topic_info.secondary:
+                        continue
+                
                 sessions.append({
-                    "id": data["id"],
+                    "id": session_id,
                     "title": data.get("title", "New Session"),
                     "updated_at": data.get("updated_at"),
+                    "topics": topics_dict,
                 })
         return sorted(sessions, key=lambda x: x.get("updated_at", ""), reverse=True)
     
@@ -102,6 +121,12 @@ class Session:
             self._title_generated = True
         
         self.save()
+        
+        # Auto-index topics after a few messages (async, non-blocking)
+        user_count = sum(1 for m in self.messages if m.get("role") == "user")
+        if user_count == 3 and not self.topics:
+            import asyncio
+            asyncio.create_task(self._auto_index_topics())
     
     def get_messages(self) -> list[dict]:
         """Get all messages for LLM context (user/assistant only, no tool messages)"""
@@ -128,6 +153,24 @@ class Session:
         """Update session title"""
         self.title = title
         self.save()
+    
+    async def _auto_index_topics(self):
+        """Auto-index topics for this session (runs in background)"""
+        try:
+            from codesm.session.topics import get_topic_index
+            index = get_topic_index()
+            info = await index.index_session(self.id)
+            self.topics = info.to_dict()
+        except Exception:
+            pass  # Non-critical, don't fail the session
+    
+    async def index_topics(self, force: bool = False):
+        """Manually index topics for this session"""
+        from codesm.session.topics import get_topic_index
+        index = get_topic_index()
+        info = await index.index_session(self.id, force=force)
+        self.topics = info.to_dict()
+        return info
     
     async def generate_title_from_message(self, message: str):
         """Generate a title from the first user message using LLM.
