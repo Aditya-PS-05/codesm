@@ -38,6 +38,7 @@ class ToolRegistry:
         from .task import TaskTool
         from .skill import SkillTool
         from .undo import UndoTool
+        from .redo import RedoTool
         from .lookat import LookAtTool
         from .oracle import OracleTool
         from .finder import FinderTool
@@ -47,7 +48,7 @@ class ToolRegistry:
         from .orchestrate import OrchestrateTool, PipelineTool
         from .mermaid import MermaidTool, DiagramGeneratorTool
 
-        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, LookAtTool]:
+        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, RedoTool, LookAtTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
         

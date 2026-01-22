@@ -8,6 +8,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from codesm.storage.storage import Storage
 from codesm.session.title import create_default_title, is_default_title, generate_title_sync, generate_title_async
+from codesm.undo_history import UndoHistory
 
 if TYPE_CHECKING:
     from codesm.snapshot import Snapshot
@@ -27,6 +28,7 @@ class Session:
     _title_generated: bool = field(default=False, repr=False)
     _snapshot: Optional["Snapshot"] = field(default=None, repr=False)
     _current_snapshot_hash: Optional[str] = field(default=None, repr=False)
+    _undo_history: Optional[UndoHistory] = field(default=None, repr=False)
     
     @classmethod
     def create(cls, directory: Path, is_child: bool = False) -> "Session":
@@ -252,3 +254,9 @@ class Session:
             self._title_generated = True
         
         self.save()
+    
+    def get_undo_history(self) -> UndoHistory:
+        """Get or create the undo history for this session"""
+        if self._undo_history is None:
+            self._undo_history = UndoHistory()
+        return self._undo_history

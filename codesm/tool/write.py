@@ -43,6 +43,18 @@ class WriteTool(Tool):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
             
+            # Record write in undo history
+            if session:
+                history = session.get_undo_history()
+                history.record_edit(
+                    file_path=str(path),
+                    before_content=old_content,
+                    after_content=content,
+                    tool_name="write",
+                    description=f"write {path.name}" if is_new_file else f"overwrite {path.name}",
+                    snapshot_hash=pre_write_hash,
+                )
+            
             # Generate diff output
             new_lines = content.split('\n')
             if is_new_file:

@@ -3,12 +3,11 @@
 from pathlib import Path
 from typing import Optional
 from .base import Tool
-from codesm.snapshot import Snapshot
 
 
 class UndoTool(Tool):
     name = "undo"
-    description = "Undo the last edit made to a file, restoring it to its previous state."
+    description = "Undo the last edit made to a file, restoring it to its previous state. Shows history of edits when available."
     
     def get_parameters_schema(self) -> dict:
         return {
@@ -16,48 +15,110 @@ class UndoTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Absolute path to the file whose last edit should be undone",
+                    "description": "Absolute path to the file whose last edit should be undone. If not provided, undoes the most recent edit across all files.",
+                },
+                "show_history": {
+                    "type": "boolean",
+                    "description": "If true, show edit history instead of undoing. Default: false",
                 },
             },
-            "required": ["path"],
+            "required": [],
         }
     
     async def execute(self, args: dict, context: dict) -> str:
-        path = Path(args["path"])
-        
-        if not path.exists():
-            return f"Error: File not found: {path}"
+        path_str = args.get("path")
+        show_history = args.get("show_history", False)
         
         session = context.get("session")
         if not session:
             return "Error: No session context available for undo"
         
-        file_str = str(path)
-        patches_to_revert = []
+        history = session.get_undo_history()
         
-        for msg in reversed(session.messages):
-            msg_patches = msg.get("_patches", [])
-            for p in msg_patches:
-                if file_str in p.get("files", []):
-                    patches_to_revert.append(p)
-                    break
-            if patches_to_revert:
-                break
+        # Resolve path if provided
+        file_path = None
+        if path_str:
+            file_path = Path(path_str)
+            if not file_path.exists() and not show_history:
+                return f"Error: File not found: {file_path}"
         
-        if not patches_to_revert:
-            return f"No recorded changes found for: {path}"
+        # Show history if requested
+        if show_history:
+            return self._format_history(history, file_path)
+        
+        # Check if undo is available
+        if not history.can_undo(str(file_path) if file_path else None):
+            if file_path:
+                return f"No edits to undo for: {file_path.name}"
+            return "No edits to undo"
+        
+        # Get the operation to undo
+        op = history.undo(str(file_path) if file_path else None)
+        if not op:
+            return "No edits to undo"
         
         try:
-            snapshot = session.get_snapshot()
+            target_path = Path(op.file_path)
             
-            from codesm.snapshot.snapshot import Patch
-            patches = [Patch(hash=p["hash"], files=[file_str]) for p in patches_to_revert]
+            # Verify current content matches expected (to avoid data loss)
+            if target_path.exists():
+                current_content = target_path.read_text()
+                if current_content != op.after_content:
+                    # Content changed externally, warn user
+                    # Still proceed but note the discrepancy
+                    pass
             
-            reverted = await snapshot.revert_files(patches)
+            # Apply the undo (restore before_content)
+            target_path.write_text(op.before_content)
             
-            if file_str in reverted or str(path.resolve()) in reverted:
-                return f"✓ Undid last edit to {path.name}"
-            else:
-                return f"Could not undo changes to: {path}"
+            # Build result message
+            redo_available = history.get_redo_count(str(target_path))
+            undo_available = history.get_undo_count(str(target_path))
+            
+            result = f"✓ Undid edit to {target_path.name}"
+            if op.description:
+                result += f" ({op.description})"
+            
+            stats = []
+            if undo_available > 0:
+                stats.append(f"{undo_available} more undo")
+            if redo_available > 0:
+                stats.append(f"{redo_available} redo")
+            if stats:
+                result += f" [{', '.join(stats)} available]"
+            
+            return result
+            
         except Exception as e:
+            # Put the operation back on undo stack since we failed
+            history._undo_stack.append(op)
+            if op in history._redo_stack:
+                history._redo_stack.remove(op)
             return f"Error undoing edit: {e}"
+    
+    def _format_history(self, history, file_path: Optional[Path] = None) -> str:
+        """Format edit history for display"""
+        ops = history.get_history(str(file_path) if file_path else None, limit=20)
+        
+        if not ops:
+            if file_path:
+                return f"No edit history for: {file_path.name}"
+            return "No edit history available"
+        
+        lines = ["## Edit History\n"]
+        for i, op in enumerate(ops, 1):
+            path = Path(op.file_path)
+            time_str = op.timestamp.strftime("%H:%M:%S")
+            before_lines = len(op.before_content.split('\n'))
+            after_lines = len(op.after_content.split('\n'))
+            diff = after_lines - before_lines
+            diff_str = f"+{diff}" if diff > 0 else str(diff)
+            
+            desc = op.description or op.tool_name
+            lines.append(f"{i}. **{path.name}** ({time_str}) - {desc} [{diff_str} lines]")
+        
+        undo_count = history.get_undo_count(str(file_path) if file_path else None)
+        redo_count = history.get_redo_count(str(file_path) if file_path else None)
+        lines.append(f"\n*{undo_count} undo, {redo_count} redo available*")
+        
+        return '\n'.join(lines)

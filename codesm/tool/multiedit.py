@@ -59,6 +59,12 @@ class MultiEditTool(Tool):
             original_content = path.read_text()
             content = original_content
 
+            # Get session and snapshot for undo tracking
+            session = context.get("session")
+            pre_edit_hash = None
+            if session:
+                pre_edit_hash = await session.track_snapshot()
+
             # Validate all edits first (dry run)
             validation_errors = []
             test_content = content
@@ -126,6 +132,18 @@ class MultiEditTool(Tool):
 
             # Write the final content
             path.write_text(content)
+
+            # Record multiedit in undo history
+            if session:
+                history = session.get_undo_history()
+                history.record_edit(
+                    file_path=str(path),
+                    before_content=original_content,
+                    after_content=content,
+                    tool_name="multiedit",
+                    description=f"multiedit {path.name} ({len(edits)} edits)",
+                    snapshot_hash=pre_edit_hash,
+                )
 
             # Build stats string
             stats_parts = []

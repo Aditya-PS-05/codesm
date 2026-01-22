@@ -60,6 +60,18 @@ class EditTool(Tool):
             # Write the file
             path.write_text(updated)
 
+            # Record edit in undo history
+            if session:
+                history = session.get_undo_history()
+                history.record_edit(
+                    file_path=str(path),
+                    before_content=content,
+                    after_content=updated,
+                    tool_name="edit",
+                    description=f"edit {path.name}",
+                    snapshot_hash=pre_edit_hash,
+                )
+
             # Generate styled diff for display
             diff_output = self._generate_styled_diff(path, old_content, new_content, content)
 
