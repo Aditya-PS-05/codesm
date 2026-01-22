@@ -200,7 +200,7 @@ The system uses task-specialized models across three tiers:
 - [x] **File Watcher** - React to file changes in real-time
 - [x] **Diff Preview** - Show unified diff before applying edits
 - [x] **Format on Save** - Auto-format files after edits (ruff, prettier, gofmt, rustfmt)
-- [ ] **Multi-file Atomic Edits** - Transactional edits across files
+- [x] **Multi-file Atomic Edits** - Transactional edits across files
 
 #### Context & Memory
 - [ ] **AGENTS.md Support** - Read project-specific instructions automatically

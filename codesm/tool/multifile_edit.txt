@@ -1,0 +1,40 @@
+Multi-File Atomic Edit Tool
+
+Edit multiple files in a single atomic transaction. All changes succeed together or all are rolled back on failure.
+
+Parameters:
+- edits: Array of file edits with:
+  - path: Absolute file path
+  - old_content: Content to replace (for edit operations)
+  - new_content: New content to insert
+  - operation: "edit" (default), "create", or "delete"
+- description: Description for undo history
+
+Features:
+- Transactional: All files succeed or all changes are rolled back
+- File locking: Prevents concurrent edit conflicts
+- Undo support: Entire transaction can be undone as a single unit
+- Validation: All edits validated before any are applied
+
+Example usage:
+{
+  "edits": [
+    {
+      "path": "/src/api.py",
+      "old_content": "def old_function():",
+      "new_content": "def new_function():"
+    },
+    {
+      "path": "/src/tests/test_api.py", 
+      "old_content": "test_old_function",
+      "new_content": "test_new_function"
+    }
+  ],
+  "description": "Rename function across files"
+}
+
+Use cases:
+- Renaming symbols across multiple files
+- Coordinated refactoring
+- API changes requiring updates in multiple places
+- Creating related files together (e.g., component + test + types)

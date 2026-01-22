@@ -24,6 +24,7 @@ class ToolRegistry:
         from .write import WriteTool
         from .edit import EditTool
         from .multiedit import MultiEditTool
+        from .multifile_edit import MultiFileEditTool
         from .bash import BashTool
         from .grep import GrepTool
         from .glob import GlobTool
@@ -48,7 +49,7 @@ class ToolRegistry:
         from .orchestrate import OrchestrateTool, PipelineTool
         from .mermaid import MermaidTool, DiagramGeneratorTool
 
-        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, RedoTool, LookAtTool]:
+        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, MultiFileEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, RedoTool, LookAtTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
         
