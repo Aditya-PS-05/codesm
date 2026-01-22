@@ -144,7 +144,7 @@ class ToolCallWidget(Static):
             text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
             if path:
                 text.append(" in ", style="dim")
-                text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+                text.append_text(self._format_path_link(path, dim))
         
         elif name == "glob":
             pattern = args.get("pattern", args.get("file_pattern", ""))
@@ -153,7 +153,7 @@ class ToolCallWidget(Static):
             text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
             if path:
                 text.append(" in ", style="dim")
-                text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+                text.append_text(self._format_path_link(path, dim))
         
         elif name == "web" or name == "webfetch":
             url = args.get("url", "")
@@ -176,7 +176,7 @@ class ToolCallWidget(Static):
             text.append(f'"{query_display}"', style=f"bold {YELLOW}" if not dim else "dim")
             if path:
                 text.append(" in ", style="dim")
-                text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+                text.append_text(self._format_path_link(path, dim))
         
         elif name == "todo":
             action = args.get("action", "")
@@ -236,6 +236,20 @@ class ToolCallWidget(Static):
         if len(parts) > 3:
             return f".../{'/'.join(parts[-2:])}"
         return path
+
+    def _format_path_link(self, path: str, dim: bool = False) -> Text:
+        """Format path as a clickable file:// hyperlink with shortened display"""
+        text = Text()
+        if not path:
+            return text
+        
+        display_path = self._short_path(path)
+        file_url = f"file://{path}"
+        base_style = "dim" if dim else f"{CYAN}"
+        
+        # Use Rich's hyperlink - shows only display text, ctrl+click opens file
+        text.append(display_path, style=f"{base_style} link {file_url}")
+        return text
 
     def _format_args(self, args: dict) -> str:
         """Format args for display"""
@@ -332,7 +346,7 @@ class ToolGroupWidget(Static):
             text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
             if path:
                 text.append(" in ", style="dim")
-                text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+                text.append_text(self._format_path_link(path, dim))
         elif name == "glob":
             pattern = args.get("pattern", args.get("file_pattern", ""))
             text.append("Glob ", style=base_style)
@@ -340,7 +354,7 @@ class ToolGroupWidget(Static):
         elif name == "read":
             path = args.get("path", args.get("file_path", ""))
             text.append("Read ", style=base_style)
-            text.append(self._short_path(path), style=f"{CYAN} underline" if not dim else "dim")
+            text.append_text(self._format_path_link(path, dim))
         else:
             text.append(f"{name}", style=base_style)
         
@@ -354,6 +368,20 @@ class ToolGroupWidget(Static):
         if len(parts) > 3:
             return f".../{'/'.join(parts[-2:])}"
         return path
+
+    def _format_path_link(self, path: str, dim: bool = False) -> Text:
+        """Format path as a clickable file:// hyperlink with shortened display"""
+        text = Text()
+        if not path:
+            return text
+        
+        display_path = self._short_path(path)
+        file_url = f"file://{path}"
+        base_style = "dim" if dim else f"{CYAN}"
+        
+        # Use Rich's hyperlink - shows only display text, ctrl+click opens file
+        text.append(display_path, style=f"{base_style} link {file_url}")
+        return text
 
     def add_tool(self, name: str, args: dict, pending: bool = True):
         """Add a tool call to the group"""
