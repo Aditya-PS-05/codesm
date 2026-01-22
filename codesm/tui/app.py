@@ -3,6 +3,7 @@
 from pathlib import Path
 import logging
 import traceback
+import uuid
 from textual.app import App, ComposeResult
 from textual.worker import Worker, WorkerState
 
@@ -936,6 +937,9 @@ class CodesmApp(App):
             # Streaming text widget for live response display
             streaming_widget: StreamingTextWidget | None = None
             cursor_timer = None
+            
+            # Generate unique ID for this response's streaming widget
+            streaming_widget_id = f"streaming-response-{uuid.uuid4().hex[:8]}"
 
             async for chunk in self.agent.chat(message):
                 # Check if cancel was requested
@@ -951,7 +955,7 @@ class CodesmApp(App):
                         # Create or re-mount streaming widget
                         if streaming_widget is None and chunk.content:
                             streaming_widget = StreamingTextWidget()
-                            streaming_widget.id = "streaming-response"
+                            streaming_widget.id = streaming_widget_id
                             await messages_container.mount(streaming_widget)
                             cursor_timer = self.set_interval(0.5, lambda: self._blink_cursor(streaming_widget))
                         elif streaming_widget is not None and streaming_widget.parent is None and chunk.content:

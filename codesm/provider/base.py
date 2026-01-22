@@ -56,5 +56,8 @@ def get_provider(model: str) -> Provider:
         from .openrouter import OpenRouterProvider
         # model_id here is "anthropic/claude-sonnet-4" or similar
         return OpenRouterProvider(model_id)
+    elif provider_id == "ollama":
+        from .ollama import OllamaProvider
+        return OllamaProvider(model_id)
     else:
-        raise ValueError(f"Unknown provider: {provider_id}. Supported: anthropic, openai, openrouter")
+        raise ValueError(f"Unknown provider: {provider_id}. Supported: anthropic, openai, openrouter, ollama")

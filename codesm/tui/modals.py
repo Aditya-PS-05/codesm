@@ -44,6 +44,17 @@ MODELS_BY_PROVIDER = {
         {"id": "openrouter/deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "OpenRouter"},
         {"id": "openrouter/meta-llama/llama-3.1-70b-instruct", "name": "Llama 3.1 70B", "provider": "OpenRouter"},
     ],
+    "Ollama (Local)": [
+        {"id": "ollama/qwen3:14b", "name": "Qwen 3 14B", "provider": "Local"},
+        {"id": "ollama/qwen3:4b", "name": "Qwen 3 4B (Fast)", "provider": "Local"},
+        {"id": "ollama/qwen3:32b", "name": "Qwen 3 32B", "provider": "Local"},
+        {"id": "ollama/deepseek-coder-v2:16b", "name": "DeepSeek Coder V2 16B", "provider": "Local"},
+        {"id": "ollama/llama3.3:70b", "name": "Llama 3.3 70B", "provider": "Local"},
+        {"id": "ollama/llama3.2:3b", "name": "Llama 3.2 3B (Fast)", "provider": "Local"},
+        {"id": "ollama/codellama:13b", "name": "Code Llama 13B", "provider": "Local"},
+        {"id": "ollama/mistral:7b", "name": "Mistral 7B", "provider": "Local"},
+        {"id": "ollama/gemma2:9b", "name": "Gemma 2 9B", "provider": "Local"},
+    ],
 }
 
 # Agent modes - smart vs rush
@@ -66,6 +77,7 @@ RUSH_MODE_MODELS = {
     "openai": "openai/gpt-4o-mini",
     "openrouter": "openrouter/anthropic/claude-3.5-haiku",
     "google": "google/gemini-2.0-flash",
+    "ollama": "ollama/qwen3:4b",
 }
 
 PROVIDERS = {

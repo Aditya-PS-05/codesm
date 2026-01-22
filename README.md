@@ -107,6 +107,7 @@ codesm supports two agent modes for different task types:
 - **Anthropic** - Claude models (Sonnet, Opus, Haiku)
 - **OpenAI** - GPT-4o, GPT-4-turbo, o1
 - **OpenRouter** - Access 100+ models with one API key
+- **Ollama** - Local models (Llama, Qwen, DeepSeek, Mistral)
 - **Google** - Gemini models (coming soon)
 
 ### Connect a Provider
@@ -320,7 +321,7 @@ The system uses task-specialized models across three tiers:
 - [ ] **API Testing** - Make HTTP requests and validate responses
 
 #### Local-First Features
-- [ ] **Ollama Integration** - Run fully local with open models
+- [x] **Ollama Integration** - Run fully local with open models
 - [ ] **Embedding Cache** - Local vector DB for semantic search (ChromaDB/LanceDB)
 - [ ] **Offline Fallback** - Graceful degradation when no internet
 - [ ] **Model Switching Mid-Task** - Hot-swap models during execution
@@ -422,7 +423,7 @@ The system uses task-specialized models across three tiers:
 
 ### Phase 2: Differentiation (2-4 weeks)
 **Goal: Create your unique angle**
-- [ ] **Ollama/local models** - First-class offline support (big differentiator)
+- [x] **Ollama/local models** - First-class offline support (big differentiator)
 - [ ] **Cost tracking dashboard** - Show users their spend in real-time
 - [ ] **Git integration** - Auto-commit, branch, PR creation
 - [ ] **Cross-session memory** - Remember preferences/past solutions
@@ -440,4 +441,4 @@ The system uses task-specialized models across three tiers:
 3. **Cost tracking** → users love transparency
 4. **Git integration** → makes it a complete workflow
 
-> 💡 **Strategic Note:** Ship Ollama support early—"fully local AI coding agent" is a strong positioning no major player owns yet.
+> **Strategic Note:** Ship Ollama support early—"fully local AI coding agent" is a strong positioning no major player owns yet.

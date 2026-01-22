@@ -5,6 +5,7 @@ from .base import Provider
 from .anthropic import AnthropicProvider
 from .openai import OpenAIProvider
 from .openrouter import OpenRouterProvider
+from .ollama import OllamaProvider
 
 
 class ModelRouter:
@@ -15,6 +16,7 @@ class ModelRouter:
         "anthropic": AnthropicProvider,
         "openai": OpenAIProvider,
         "openrouter": OpenRouterProvider,
+        "ollama": OllamaProvider,
     }
 
     # Common model aliases - can use OpenRouter for multi-model access
@@ -62,6 +64,12 @@ class ModelRouter:
         
         # Diagram generation
         "diagram": "openrouter/google/gemini-2.5-flash-preview",
+        
+        # Local/Ollama aliases - for offline/private use
+        "local": "ollama/qwen3:14b",
+        "local-fast": "ollama/qwen3:4b",
+        "local-code": "ollama/deepseek-coder-v2:16b",
+        "local-large": "ollama/llama3.3:70b",
     }
 
     @classmethod
