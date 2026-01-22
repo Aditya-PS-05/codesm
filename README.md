@@ -198,8 +198,8 @@ The system uses task-specialized models across three tiers:
 #### Tool System
 - [x] **Undo/Redo System** - Revert any file edit with full history
 - [x] **File Watcher** - React to file changes in real-time
+- [x] **Diff Preview** - Show unified diff before applying edits
 - [ ] **Format on Save** - Auto-format files after edits (prettier, black, etc.)
-- [ ] **Diff Preview** - Show unified diff before applying edits
 - [ ] **Multi-file Atomic Edits** - Transactional edits across files
 
 #### Context & Memory

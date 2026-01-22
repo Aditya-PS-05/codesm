@@ -11,7 +11,7 @@ from textual.widgets import Input, Static, RichLog, Markdown
 from textual.binding import Binding
 
 from .themes import THEMES, get_next_theme
-from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal, ThemeSelectModal, PermissionModal, ModeSelectModal, RUSH_MODE_MODELS
+from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal, ThemeSelectModal, PermissionModal, ModeSelectModal, DiffPreviewModal, DiffPreviewResponse, RUSH_MODE_MODELS
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
 from .chat import ChatMessage, ContextSidebar, PromptInput
@@ -23,6 +23,8 @@ from .tools import (
 from .autocomplete import AutocompletePopup
 from codesm.auth import ClaudeOAuth
 from codesm.permission import get_permission_manager, PermissionRequest, PermissionResponse, respond_permission
+from codesm.diff_preview import get_diff_preview_manager, DiffPreviewRequest, respond_diff_preview
+from codesm.diff_preview import DiffPreviewResponse as DiffPreviewResponseEnum
 
 logger = logging.getLogger(__name__)
 
@@ -319,10 +321,15 @@ class CodesmApp(App):
         self._autocomplete_trigger_pos = 0
         self._file_mentions: list[str] = []  # Track mentioned files for context
         self._file_watcher = None  # File watcher instance
+        self._pending_diff_previews: dict[str, DiffPreviewRequest] = {}
         
         # Set up permission callback
         permission_manager = get_permission_manager()
         permission_manager.set_request_callback(self._on_permission_request)
+        
+        # Set up diff preview callback
+        diff_preview_manager = get_diff_preview_manager()
+        diff_preview_manager.set_request_callback(self._on_diff_preview_request)
 
     def compose(self) -> ComposeResult:
         with Container(id="main-container"):
@@ -1552,3 +1559,34 @@ class CodesmApp(App):
             self._pending_permission_requests.pop(request.id, None)
         
         self.run_worker(handle_permission())
+
+    def _on_diff_preview_request(self, request: DiffPreviewRequest):
+        """Called when a tool requests diff preview - shows the modal."""
+        self._pending_diff_previews[request.id] = request
+        self.call_from_thread(self._show_diff_preview_modal, request)
+
+    def _show_diff_preview_modal(self, request: DiffPreviewRequest):
+        """Show the diff preview modal and handle the response."""
+        async def handle_preview():
+            modal = DiffPreviewModal(
+                file_path=request.file_path,
+                old_content=request.old_content,
+                new_content=request.new_content,
+                tool_name=request.tool_name,
+            )
+            result = await self.push_screen_wait(modal)
+            
+            if result is not None:
+                # Map modal response to enum
+                if result == DiffPreviewResponse.APPLY:
+                    respond_diff_preview(request.session_id, request.id, DiffPreviewResponseEnum.APPLY)
+                elif result == DiffPreviewResponse.SKIP:
+                    respond_diff_preview(request.session_id, request.id, DiffPreviewResponseEnum.SKIP)
+                else:
+                    respond_diff_preview(request.session_id, request.id, DiffPreviewResponseEnum.CANCEL)
+            else:
+                respond_diff_preview(request.session_id, request.id, DiffPreviewResponseEnum.CANCEL)
+            
+            self._pending_diff_previews.pop(request.id, None)
+        
+        self.run_worker(handle_preview())

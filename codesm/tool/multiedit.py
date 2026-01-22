@@ -96,6 +96,24 @@ class MultiEditTool(Tool):
                     validation_errors
                 )
 
+            # Show diff preview if enabled (using test_content which has all edits applied)
+            try:
+                from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
+                session_id = session.id if session else "default"
+                await request_diff_preview(
+                    session_id=session_id,
+                    file_path=str(path),
+                    old_content=original_content,
+                    new_content=test_content,
+                    tool_name="multiedit",
+                )
+            except DiffPreviewSkippedError:
+                return f"MultiEdit skipped by user: {path.name}"
+            except DiffPreviewCancelledError:
+                return f"MultiEdit cancelled by user"
+            except Exception:
+                pass  # If diff preview fails, proceed anyway
+
             # All edits valid, apply them for real
             results = []
             total_added = 0

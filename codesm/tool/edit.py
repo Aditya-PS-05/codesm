@@ -50,6 +50,24 @@ class EditTool(Tool):
 
             updated = content.replace(old_content, new_content, 1)
 
+            # Show diff preview if enabled
+            try:
+                from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
+                session_id = session.id if session else "default"
+                await request_diff_preview(
+                    session_id=session_id,
+                    file_path=str(path),
+                    old_content=content,
+                    new_content=updated,
+                    tool_name="edit",
+                )
+            except DiffPreviewSkippedError:
+                return f"Edit skipped by user: {path.name}"
+            except DiffPreviewCancelledError:
+                return f"Edit cancelled by user"
+            except Exception:
+                pass  # If diff preview fails, proceed anyway
+
             # Calculate lines added/removed/modified
             old_lines = old_content.split('\n')
             new_lines = new_content.split('\n')

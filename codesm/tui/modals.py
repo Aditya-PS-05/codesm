@@ -1308,3 +1308,195 @@ class ModeSelectModal(ModalScreen):
                 self.dismiss("rush")
         except Exception:
             pass
+
+
+class DiffPreviewResponse(str):
+    """Response from diff preview modal"""
+    APPLY = "apply"
+    SKIP = "skip"
+    CANCEL = "cancel"
+
+
+class DiffPreviewModal(ModalScreen):
+    """Modal for previewing file diffs before applying edits."""
+
+    CSS = """
+    DiffPreviewModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+
+    #diff-container {
+        width: 100;
+        height: auto;
+        max-height: 85%;
+        background: $surface;
+        border: tall $primary;
+        padding: 1 2;
+    }
+
+    #diff-header {
+        height: 1;
+        width: 100%;
+        margin-bottom: 1;
+    }
+
+    #diff-title {
+        text-style: bold;
+        color: $primary;
+        width: 1fr;
+    }
+
+    #diff-file-info {
+        width: auto;
+        color: $text-muted;
+    }
+
+    #diff-content {
+        margin: 1 0;
+        padding: 1;
+        background: $panel;
+        height: auto;
+        max-height: 50;
+        overflow-y: auto;
+    }
+
+    #diff-stats {
+        height: 1;
+        margin: 1 0;
+        color: $text-muted;
+    }
+
+    .diff-added {
+        color: #a6da95;
+    }
+
+    .diff-removed {
+        color: #ed8796;
+    }
+
+    .diff-context {
+        color: $text-muted;
+    }
+
+    #button-row {
+        height: 3;
+        margin-top: 1;
+        align: center middle;
+    }
+
+    #button-row Button {
+        margin: 0 1;
+        min-width: 16;
+    }
+
+    #hint-row {
+        height: 1;
+        margin-top: 1;
+        color: $text-muted;
+        text-align: center;
+    }
+    """
+
+    BINDINGS = [
+        Binding("y", "apply", "Apply", show=True),
+        Binding("enter", "apply", "Apply", show=False),
+        Binding("s", "skip", "Skip", show=True),
+        Binding("n", "cancel", "Cancel", show=True),
+        Binding("escape", "cancel", "Cancel", show=False),
+    ]
+
+    def __init__(
+        self,
+        file_path: str,
+        old_content: str,
+        new_content: str,
+        tool_name: str = "edit",
+    ):
+        super().__init__()
+        self.file_path = file_path
+        self.old_content = old_content
+        self.new_content = new_content
+        self.tool_name = tool_name
+
+    def compose(self) -> ComposeResult:
+        from pathlib import Path
+        import difflib
+
+        path = Path(self.file_path)
+        
+        # Generate diff
+        old_lines = self.old_content.splitlines(keepends=True)
+        new_lines = self.new_content.splitlines(keepends=True)
+        
+        diff = list(difflib.unified_diff(
+            old_lines, new_lines,
+            fromfile=f"a/{path.name}",
+            tofile=f"b/{path.name}",
+            lineterm="",
+        ))
+        
+        # Calculate stats
+        added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
+        removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
+        
+        # Format diff with colors
+        diff_text = self._format_diff(diff)
+        
+        with Vertical(id="diff-container"):
+            with Horizontal(id="diff-header"):
+                yield Static(f"📝 Preview: {self.tool_name.title()}", id="diff-title")
+                yield Static(f"[{path.name}]", id="diff-file-info")
+
+            yield Static(diff_text, id="diff-content")
+            yield Static(f"[green]+{added}[/] [red]-{removed}[/] lines", id="diff-stats")
+            
+            with Horizontal(id="button-row"):
+                yield Button("Apply (y)", id="btn-apply", variant="success")
+                yield Button("Skip (s)", id="btn-skip", variant="warning")
+                yield Button("Cancel (n)", id="btn-cancel", variant="error")
+            
+            yield Static(
+                "[y/enter] apply  [s] skip this edit  [n/esc] cancel all",
+                id="hint-row",
+            )
+
+    def _format_diff(self, diff_lines: list[str]) -> str:
+        """Format diff lines with Rich markup for colors"""
+        from rich.text import Text
+        
+        result = []
+        for line in diff_lines[:100]:  # Limit to 100 lines
+            line = line.rstrip('\n')
+            if line.startswith('+++') or line.startswith('---'):
+                result.append(f"[bold]{line}[/]")
+            elif line.startswith('@@'):
+                result.append(f"[cyan]{line}[/]")
+            elif line.startswith('+'):
+                result.append(f"[green]{line}[/]")
+            elif line.startswith('-'):
+                result.append(f"[red]{line}[/]")
+            else:
+                result.append(f"[dim]{line}[/]")
+        
+        if len(diff_lines) > 100:
+            result.append(f"\n[dim]... ({len(diff_lines) - 100} more lines)[/]")
+        
+        return '\n'.join(result) if result else "[dim]No changes[/]"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-apply":
+            self.action_apply()
+        elif event.button.id == "btn-skip":
+            self.action_skip()
+        elif event.button.id == "btn-cancel":
+            self.action_cancel()
+
+    def action_apply(self):
+        self.dismiss(DiffPreviewResponse.APPLY)
+
+    def action_skip(self):
+        self.dismiss(DiffPreviewResponse.SKIP)
+
+    def action_cancel(self):
+        self.dismiss(DiffPreviewResponse.CANCEL)

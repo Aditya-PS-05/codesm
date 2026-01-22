@@ -40,6 +40,25 @@ class WriteTool(Tool):
             if not is_new_file:
                 old_content = path.read_text()
             
+            # Show diff preview if enabled (for overwrites, not new files)
+            if not is_new_file:
+                try:
+                    from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
+                    session_id = session.id if session else "default"
+                    await request_diff_preview(
+                        session_id=session_id,
+                        file_path=str(path),
+                        old_content=old_content,
+                        new_content=content,
+                        tool_name="write",
+                    )
+                except DiffPreviewSkippedError:
+                    return f"Write skipped by user: {path.name}"
+                except DiffPreviewCancelledError:
+                    return f"Write cancelled by user"
+                except Exception:
+                    pass  # If diff preview fails, proceed anyway
+            
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
             
