@@ -318,6 +318,7 @@ class CodesmApp(App):
         self._showing_autocomplete = False
         self._autocomplete_trigger_pos = 0
         self._file_mentions: list[str] = []  # Track mentioned files for context
+        self._file_watcher = None  # File watcher instance
         
         # Set up permission callback
         permission_manager = get_permission_manager()
@@ -393,6 +394,12 @@ class CodesmApp(App):
             return self.query_one("#chat-message-input", Input)
         return self.query_one("#message-input", Input)
 
+    async def on_unmount(self):
+        """Cleanup when app unmounts"""
+        # Stop file watcher
+        if self._file_watcher:
+            await self._file_watcher.stop()
+
     async def on_mount(self):
         """Initialize when app mounts"""
         for theme in THEMES.values():
@@ -448,6 +455,9 @@ class CodesmApp(App):
 
         # Initialize LSP servers
         self._init_lsp()
+        
+        # Start file watcher
+        self._init_file_watcher()
 
         input_widget = self.query_one("#message-input", Input)
         input_widget.focus()
@@ -483,6 +493,47 @@ class CodesmApp(App):
                 logger.error(f"Failed to initialize LSP: {e}")
         
         asyncio.create_task(start_lsp())
+
+    def _init_file_watcher(self):
+        """Initialize file watcher in background"""
+        import asyncio
+        
+        async def start_watcher():
+            try:
+                from codesm.file_watcher import FileWatcher, ChangeType
+                
+                def on_file_change(change):
+                    """Handle file change events"""
+                    # Format notification based on change type
+                    icon = "📝" if change.change_type == ChangeType.MODIFIED else \
+                           "✨" if change.change_type == ChangeType.CREATED else "🗑️"
+                    
+                    self.notify(
+                        f"{icon} {change.relative_path} {change.change_type.value}",
+                        timeout=2,
+                    )
+                    
+                    # Update sidebar if available
+                    try:
+                        sidebar = self.query_one("#context-sidebar", ContextSidebar)
+                        sidebar.update_file_change(change)
+                    except Exception:
+                        pass
+                    
+                    logger.debug(f"File change: {change}")
+                
+                self._file_watcher = FileWatcher(
+                    directory=self.directory,
+                    on_change=on_file_change,
+                    poll_interval=1.5,  # Check every 1.5 seconds
+                )
+                await self._file_watcher.start()
+                
+                logger.info(f"File watcher started: {self._file_watcher.watched_file_count} files")
+            except Exception as e:
+                logger.error(f"Failed to initialize file watcher: {e}")
+        
+        asyncio.create_task(start_watcher())
 
     def on_input_changed(self, event: Input.Changed):
         """Handle input text changes - show command palette or autocomplete"""

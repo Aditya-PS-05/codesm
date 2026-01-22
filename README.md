@@ -196,8 +196,8 @@ The system uses task-specialized models across three tiers:
 - [ ] **Agent Self-Correction** - Detect and retry failed tool calls with different approaches
 
 #### Tool System
-- [ ] **Undo/Redo System** - Revert any file edit with full history
-- [ ] **File Watcher** - React to file changes in real-time
+- [x] **Undo/Redo System** - Revert any file edit with full history
+- [x] **File Watcher** - React to file changes in real-time
 - [ ] **Format on Save** - Auto-format files after edits (prettier, black, etc.)
 - [ ] **Diff Preview** - Show unified diff before applying edits
 - [ ] **Multi-file Atomic Edits** - Transactional edits across files
@@ -337,7 +337,7 @@ The system uses task-specialized models across three tiers:
 
 ### Phase 1: Polish & Reliability (1-2 weeks)
 **Goal: Make it daily-drivable**
-- [ ] **Undo/Redo system** - Critical for trust
+- [x] **Undo/Redo system** - Critical for trust
 - [ ] **Permission prompts** - Ask before destructive ops
 - [ ] **AGENTS.md support** - Match Amp/Claude Code behavior
 - [ ] **Streaming tool output** - Real-time feedback for bash/tests

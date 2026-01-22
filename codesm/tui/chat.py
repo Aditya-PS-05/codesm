@@ -522,6 +522,12 @@ class ContextSidebar(Static):
         except Exception:
             pass
 
+    def update_file_change(self, change):
+        """Update display with file change notification (optional sidebar display)"""
+        # File changes are primarily shown via notify(), but sidebar could show recent changes
+        # This is a hook for future sidebar file activity display
+        pass
+
 
 class PromptInput(Vertical):
     """Input component with status bar - OpenCode style"""
