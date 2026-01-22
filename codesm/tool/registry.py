@@ -51,6 +51,7 @@ class ToolRegistry:
         from .code_review import CodeReviewTool
         from .testgen import TestGenTool
         from .bug_localize import BugLocalizeTool
+        from .refactor import RefactorTool, RefactorApplyTool
 
         for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, MultiFileEditTool, BashTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, RedoTool, LookAtTool]:
             tool = tool_class()
@@ -102,6 +103,13 @@ class ToolRegistry:
         
         bug_localize_tool = BugLocalizeTool(parent_tools=self)
         self._tools[bug_localize_tool.name] = bug_localize_tool
+        
+        # Refactoring suggestion tools
+        refactor_tool = RefactorTool(parent_tools=self)
+        self._tools[refactor_tool.name] = refactor_tool
+        
+        refactor_apply_tool = RefactorApplyTool(parent_tools=self)
+        self._tools[refactor_apply_tool.name] = refactor_apply_tool
     
     def register(self, tool: Tool):
         """Register a tool"""

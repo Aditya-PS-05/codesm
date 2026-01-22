@@ -1,0 +1,29 @@
+Analyze code and provide proactive refactoring suggestions.
+
+This tool examines code for improvement opportunities across multiple dimensions:
+
+**Categories analyzed:**
+- **Structure** - Module organization, separation of concerns, dependency management
+- **Simplification** - Reduce complexity, eliminate duplication, simplify logic
+- **Performance** - Algorithmic improvements, caching, lazy evaluation
+- **Readability** - Better naming, clearer abstractions, documentation
+- **Patterns** - Design patterns, language idioms, best practices
+- **Modernization** - Newer language features, updated APIs
+- **Testability** - Dependency injection, pure functions, smaller units
+- **Safety** - Error handling, type safety, input validation
+
+**Use cases:**
+- Pre-commit review to catch improvement opportunities
+- Analyzing legacy code for modernization
+- Finding "quick wins" (low effort, high impact)
+- Identifying technical debt
+
+**Usage examples:**
+- Single file: `{"path": "src/utils.py"}`
+- Multiple files: `{"paths": ["src/auth.py", "src/user.py"]}`
+- Focus areas: `{"path": "src/data.py", "focus": ["performance", "simplification"]}`
+- Directory scan: `{"directory": "src/api", "max_files": 5}`
+- Code snippet: `{"code": "def foo():\n    pass", "language": "python"}`
+- Quick wins only: `{"path": "src/main.py", "quick_wins_only": true}`
+
+Each suggestion includes priority (high/medium/low), effort estimate, and impact level.
