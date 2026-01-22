@@ -528,3 +528,157 @@ nav.sidebar ul.top-level > li > details > summary .group-label > span {
 .terminal-body .output {
   color: hsl(0, 4%, 60%);
 }
+
+/* Mermaid diagram styling */
+.mermaid {
+  background: transparent !important;
+}
+
+.mermaid .node rect,
+.mermaid .node polygon,
+.mermaid .node circle {
+  fill: var(--color-background-weak) !important;
+  stroke: var(--color-border) !important;
+}
+
+.mermaid .node .label {
+  color: var(--color-text-strong) !important;
+}
+
+.mermaid .edgeLabel {
+  background-color: var(--color-background) !important;
+  color: var(--color-text) !important;
+}
+
+.mermaid .edgePath path {
+  stroke: var(--color-text-weak) !important;
+}
+
+.mermaid text {
+  fill: var(--color-text-strong) !important;
+}
+
+:root[data-theme="dark"] .mermaid .node rect,
+:root[data-theme="dark"] .mermaid .node polygon,
+:root[data-theme="dark"] .mermaid .node circle {
+  fill: hsl(0, 6%, 15%) !important;
+  stroke: hsl(0, 4%, 30%) !important;
+}
+
+:root[data-theme="dark"] .mermaid text {
+  fill: hsl(0, 15%, 90%) !important;
+}
+
+:root[data-theme="dark"] .mermaid .edgeLabel {
+  background-color: hsl(0, 9%, 7%) !important;
+  color: hsl(0, 4%, 71%) !important;
+}
+
+/* Heading link icon positioning */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) a[href^="#"] svg,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) .anchor-icon {
+  position: relative;
+  top: 2px;
+  margin-right: 4px;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Fix anchor link icon positioning */
+.sl-anchor-link {
+  position: relative;
+  margin-left: -6px !important;
+  padding-left: 0;
+}
+
+.sl-anchor-icon {
+  position: relative;
+  top: 30px;
+  opacity: 0.5;
+}
+
+.sl-anchor-icon svg {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+h2:hover .sl-anchor-icon,
+h3:hover .sl-anchor-icon,
+h4:hover .sl-anchor-icon {
+  opacity: 1;
+}
+
+/* Search modal styling */
+dialog[aria-label="Search"],
+.pagefind-ui,
+.pagefind-ui__search-input,
+[data-pagefind-ui] {
+  background: var(--sl-color-bg) !important;
+}
+
+dialog[aria-label="Search"] .dialog-frame {
+  background: var(--sl-color-bg) !important;
+}
+
+.search-input,
+dialog input[type="search"],
+dialog input[name="search"] {
+  background: var(--sl-color-bg) !important;
+  color: var(--color-text) !important;
+}
+
+:root[data-theme="dark"] dialog[aria-label="Search"],
+:root[data-theme="dark"] dialog[aria-label="Search"] .dialog-frame,
+:root[data-theme="dark"] .pagefind-ui {
+  background: hsl(0, 9%, 7%) !important;
+}
+
+/* Search input focus border */
+dialog input[type="search"]:focus,
+dialog input[name="search"]:focus,
+.search-input:focus,
+[data-pagefind-ui] input:focus {
+  outline: none !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+}
+
+dialog input[type="search"],
+dialog input[name="search"],
+.search-input,
+[data-pagefind-ui] input {
+  border: 1px solid var(--color-border-weak) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Override Starlight search accent colors */
+:root {
+  --sl-color-accent: var(--color-border) !important;
+  --sl-color-accent-high: var(--color-border) !important;
+}
+
+dialog.search-container input,
+dialog.search-container input:focus,
+dialog.search-container input:focus-visible,
+.search-container input,
+.search-container input:focus,
+.search-container input:focus-visible {
+  outline: none !important;
+  border: 1px solid var(--color-border-weak) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] dialog.search-container input:focus,
+:root[data-theme="dark"] .search-container input:focus {
+  border-color: var(--color-border) !important;
+}
+
+/* Remove all blue focus rings */
+*:focus-visible {
+  outline-color: var(--color-border) !important;
+}

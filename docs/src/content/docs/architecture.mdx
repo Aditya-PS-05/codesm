@@ -9,98 +9,58 @@ This document explains codesm's architecture for contributors and advanced users
 
 ## High-Level Overview
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        TUI Layer                              │
-│  ┌─────────────────┐  ┌─────────────────┐                    │
-│  │   Textual App   │  │    Widgets      │                    │
-│  │   (Chat, Side)  │  │  (Input, Tree)  │                    │
-│  └────────┬────────┘  └────────┬────────┘                    │
-└───────────┼────────────────────┼─────────────────────────────┘
-            │                    │
-            ▼                    ▼
-┌──────────────────────────────────────────────────────────────┐
-│                        Agent Layer                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
-│  │    Agent     │  │    Loop      │  │   Prompt     │        │
-│  │  Orchestrator│  │   Manager    │  │   Builder    │        │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘        │
-└─────────┼─────────────────┼─────────────────┼────────────────┘
-          │                 │                 │
-          ▼                 ▼                 ▼
-┌──────────────────────────────────────────────────────────────┐
-│                       Provider Layer                          │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐              │
-│  │  Anthropic │  │   OpenAI   │  │   Ollama   │              │
-│  └────────────┘  └────────────┘  └────────────┘              │
-└──────────────────────────────────────────────────────────────┘
-          │                 │                 │
-          ▼                 ▼                 ▼
-┌──────────────────────────────────────────────────────────────┐
-│                        Tool Layer                             │
-│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐      │
-│  │  Read  │ │  Edit  │ │  Bash  │ │  Grep  │ │  MCP   │      │
-│  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘      │
-└──────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      Storage Layer                            │
-│  ┌──────────────────────────────────────────────────────────┐│
-│  │  Sessions  │  Messages  │  Config  │  Auth  │  Logs      ││
-│  └──────────────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Package Structure
-
-```
-codesm/
-├── agent/           # Agent orchestration
-│   ├── agent.py     # Main agent class
-│   ├── loop.py      # ReAct loop
-│   ├── prompt.py    # System prompts
-│   └── router.py    # Model routing
-│
-├── provider/        # LLM providers
-│   ├── base.py      # Provider interface
-│   ├── anthropic.py
-│   ├── openai.py
-│   ├── openrouter.py
-│   └── ollama.py
-│
-├── tool/            # Built-in tools
-│   ├── base.py      # Tool interface
-│   ├── registry.py  # Tool registration
-│   ├── read.py
-│   ├── edit.py
-│   ├── bash.py
-│   └── ...
-│
-├── session/         # Conversation state
-│   ├── session.py
-│   ├── message.py
-│   └── context.py
-│
-├── tui/             # Terminal UI
-│   ├── app.py       # Main TUI app
-│   ├── chat.py      # Chat widget
-│   └── sidebar.py   # Session list
-│
-├── storage/         # Persistence
-│   └── storage.py   # JSON file storage
-│
-├── mcp/             # MCP integration
-│   ├── client.py
-│   └── manager.py
-│
-├── config/          # Configuration
-│   ├── config.py
-│   └── schema.py
-│
-└── cli.py           # CLI entry point
+```mermaid
+flowchart TD
+    A[User Input] --> B[Agent.stream]
+    B --> C[ReAct Loop Execute]
+    C --> D[Claude API Call]
+    D --> E{Response Type?}
+    
+    E -->|Text Response| F[Add Assistant Message]
+    E -->|Tool Call| G[Extract Tool Call]
+    
+    G --> H{Tool Type?}
+    H -->|MCP Tool| I[MCP Execute Tool]
+    H -->|Built-in Tool| J[Direct Tool Execution]
+    
+    I --> K[Generate Python Code]
+    K --> L[Execute in Subprocess]
+    L --> M[MCP Client Call]
+    M --> N[MCP Server Process]
+    N --> O[Tool Implementation]
+    O --> P[Tool Result]
+    
+    J --> Q[Tool.execute method]
+    Q --> R{Tool Category?}
+    R -->|File Operations| S[Read/Write/Edit Tools]
+    R -->|Search Tools| T[Grep/Glob/CodeSearch]
+    R -->|External Tools| U[Bash/Web Tools]
+    R -->|Agent Tools| V[Task/Oracle/Subagents]
+    
+    S --> W[File System Operations]
+    T --> X[Search Operations]
+    U --> Y[External Process/API]
+    V --> Z[Spawn New Agent]
+    
+    W --> P
+    X --> P
+    Y --> P
+    Z --> AA[Subagent Results]
+    AA --> P
+    
+    P --> BB[Add Tool Result Message]
+    BB --> CC[Update Session State]
+    CC --> DD{More Tool Calls?}
+    
+    DD -->|Yes| G
+    DD -->|No| EE[Continue ReAct Loop]
+    EE --> D
+    
+    F --> FF[Session Complete]
+    
+    CC --> GG[Context Management]
+    GG --> HH[Message Storage]
+    HH --> II[Session Persistence]
 ```
 
 ---

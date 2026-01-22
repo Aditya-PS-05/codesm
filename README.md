@@ -9,7 +9,6 @@ An AI coding agent built with Python + Rust. Features a TUI interface, multi-pro
 ## Mermaid Graph
 
 ```mermaid
-
 flowchart TD
     A[User Input] --> B[Agent.stream]
     B --> C[ReAct Loop Execute]
@@ -61,12 +60,6 @@ flowchart TD
     CC --> GG[Context Management]
     GG --> HH[Message Storage]
     HH --> II[Session Persistence]
-    
-    style A fill:#e1f5fe
-    style P fill:#c8e6c9
-    style N fill:#fff3e0
-    style Z fill:#f3e5f5
-
 ```
 
 ## Quick Start
