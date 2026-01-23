@@ -12,3 +12,4 @@ wheels/
 codesm.log
 
 core/target/
+node_modules/

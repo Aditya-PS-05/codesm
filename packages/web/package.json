@@ -1,0 +1,19 @@
+{
+  "name": "@codesm/website",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^5.16.0",
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "sharp": "^0.34.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

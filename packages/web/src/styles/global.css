@@ -1,0 +1,63 @@
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+:root {
+  --color-bg: hsl(0, 20%, 99%);
+  --color-bg-weak: hsl(0, 8%, 97%);
+  --color-text: hsl(0, 1%, 39%);
+  --color-text-strong: hsl(0, 5%, 12%);
+  --color-text-dimmed: hsl(0, 1%, 60%);
+  --color-border: hsl(0, 1%, 85%);
+
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: hsl(0, 9%, 7%);
+    --color-bg-weak: hsl(0, 6%, 10%);
+    --color-text: hsl(0, 4%, 71%);
+    --color-text-strong: hsl(0, 15%, 94%);
+    --color-text-dimmed: hsl(0, 2%, 49%);
+    --color-border: hsl(0, 4%, 23%);
+  }
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--color-text-strong);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}

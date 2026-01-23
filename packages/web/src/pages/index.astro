@@ -1,0 +1,511 @@
+---
+import { Image } from 'astro:assets';
+import config from "../../config.mjs";
+
+import CopyIcon from "../assets/lander/copy.svg";
+import CheckIcon from "../assets/lander/check.svg";
+import LogoDark from "../assets/logo-dark.svg";
+import LogoLight from "../assets/logo-light.svg";
+import TuiScreenshot from "../assets/lander/screenshot-tui.png";
+
+import "../styles/global.css";
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>codesm - AI Coding Agent for the Terminal</title>
+  <meta name="description" content="An open source AI coding agent built with Python. Features a beautiful TUI, multi-provider support, and runs fully local with Ollama." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  
+  <meta property="og:title" content="codesm - AI Coding Agent for the Terminal" />
+  <meta property="og:description" content="An open source AI coding agent built with Python. Features a beautiful TUI, multi-provider support, and runs fully local." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content={config.url} />
+  
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="codesm - AI Coding Agent for the Terminal" />
+  <meta name="twitter:description" content="An open source AI coding agent built with Python." />
+</head>
+<body>
+  <div class="hero">
+    <section class="top">
+      <div class="logo">
+        <Image src={LogoDark} alt="codesm" class="logo-dark" width={400} />
+        <Image src={LogoLight} alt="codesm" class="logo-light" width={400} />
+      </div>
+      <h1>An AI coding agent built for the terminal.</h1>
+    </section>
+
+    <section class="cta">
+      <div class="col1">
+        <a href={config.docs}>Get Started</a>
+      </div>
+      <div class="col2">
+        <button class="command" data-command="pip install codesm">
+          <code>
+            <span>pip install</span> <span class="highlight">codesm</span>
+          </code>
+          <span class="copy">
+            <CopyIcon class="icon-copy" />
+            <CheckIcon class="icon-check" />
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section class="content">
+      <ul>
+        <li><b>Native TUI</b>: A responsive, themeable terminal interface powered by Textual.</li>
+        <li><b>Multi-Provider</b>: Supports Anthropic, OpenAI, OpenRouter, Ollama, and more.</li>
+        <li><b>Smart & Rush Modes</b>: Toggle between powerful reasoning and fast execution.</li>
+        <li><b>MCP Support</b>: Extend capabilities with Model Context Protocol servers.</li>
+        <li><b>Local First</b>: Run fully offline with Ollama and local models.</li>
+        <li><b>Python + Rust</b>: Python flexibility with Rust performance for critical ops.</li>
+      </ul>
+    </section>
+
+    <section class="alternatives">
+      <div class="col1">
+        <h3>pip</h3>
+        <button class="command" data-command="pip install codesm">
+          <code>
+            <span>pip install</span> <span class="highlight">codesm</span>
+          </code>
+          <span class="copy">
+            <CopyIcon class="icon-copy" />
+            <CheckIcon class="icon-check" />
+          </span>
+        </button>
+      </div>
+      <div class="col2">
+        <h3>uv</h3>
+        <button class="command" data-command="uv pip install codesm">
+          <code>
+            <span>uv pip install</span> <span class="highlight">codesm</span>
+          </code>
+          <span class="copy">
+            <CopyIcon class="icon-copy" />
+            <CheckIcon class="icon-check" />
+          </span>
+        </button>
+      </div>
+      <div class="col3">
+        <h3>pipx</h3>
+        <button class="command" data-command="pipx install codesm">
+          <code>
+            <span>pipx install</span> <span class="highlight">codesm</span>
+          </code>
+          <span class="copy">
+            <CopyIcon class="icon-copy" />
+            <CheckIcon class="icon-check" />
+          </span>
+        </button>
+      </div>
+      <div class="col4">
+        <h3>Source</h3>
+        <button class="command" data-command="git clone https://github.com/Aditya-PS-05/codesm.git">
+          <code>
+            <span>git clone</span> <span class="highlight">github.com/Aditya-PS-05/codesm</span>
+          </code>
+          <span class="copy">
+            <CopyIcon class="icon-copy" />
+            <CheckIcon class="icon-check" />
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section class="images">
+      <div class="full">
+        <figure>
+          <figcaption>codesm TUI in action</figcaption>
+          <a href={config.docs + "/tui"}>
+            <Image src={TuiScreenshot} alt="codesm TUI screenshot" />
+          </a>
+        </figure>
+      </div>
+    </section>
+
+    <section class="footer">
+      <div class="col1">
+        <a href={config.github} target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+      <div class="col2">
+        <a href={config.discord} target="_blank" rel="noopener noreferrer">Discord</a>
+      </div>
+      <div class="col3">
+        <span>&copy;2025 <a href="https://github.com/Aditya-PS-05" target="_blank" rel="noopener noreferrer">Aditya Pratap Singh</a></span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll("button.command") as NodeListOf<HTMLButtonElement>
+
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        navigator.clipboard.writeText(button.dataset.command!)
+        button.classList.toggle("success")
+        setTimeout(() => {
+          button.classList.toggle("success");
+        }, 1500)
+      })
+    })
+  </script>
+</body>
+</html>
+
+<style>
+.hero {
+  --padding: 3rem;
+  --vertical-padding: 1.5rem;
+  --heading-font-size: 2rem;
+
+  margin: 1rem;
+  border: 2px solid var(--color-border);
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 30rem) {
+  .hero {
+    --padding: 1rem;
+    --vertical-padding: 0.75rem;
+    --heading-font-size: 1.5rem;
+    margin: 0.5rem;
+  }
+}
+
+.logo img {
+  height: auto;
+  width: clamp(200px, 70vw, 400px);
+}
+
+.logo-light {
+  display: none;
+}
+
+@media (prefers-color-scheme: light) {
+  .logo-dark {
+    display: none;
+  }
+  .logo-light {
+    display: block;
+  }
+}
+
+section.top {
+  padding: var(--padding);
+
+  h1 {
+    margin: 0;
+    margin-top: calc(var(--vertical-padding) / 8);
+    font-size: var(--heading-font-size);
+    font-weight: 500;
+    line-height: 1.25;
+    text-transform: uppercase;
+    color: var(--color-text-strong);
+  }
+}
+
+section.cta {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: stretch;
+  border-top: 2px solid var(--color-border);
+
+  @media (max-width: 50rem) {
+    flex-direction: column;
+  }
+
+  & > div {
+    line-height: 1.4;
+    padding: var(--vertical-padding) var(--padding);
+
+    a {
+      font-size: 1rem;
+    }
+  }
+
+  & > div.col1 {
+    flex: 0 0 auto;
+    text-align: center;
+    text-transform: uppercase;
+
+    @media (max-width: 50rem) {
+      padding-bottom: calc(var(--vertical-padding) + 4px);
+      border-bottom: 2px solid var(--color-border);
+    }
+
+    a {
+      display: block;
+      padding: 0.5rem 1.5rem;
+      background: var(--color-text-strong);
+      color: var(--color-bg) !important;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    a:hover {
+      opacity: 0.9;
+      text-decoration: none;
+    }
+  }
+
+  & > div.col2 {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    border-left: 2px solid var(--color-border);
+
+    @media (max-width: 50rem) {
+      border-left: none;
+    }
+  }
+}
+
+section.content {
+  border-top: 2px solid var(--color-border);
+  padding: var(--padding);
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+
+    @media (max-width: 50rem) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  li {
+    font-size: 0.9375rem;
+    line-height: 1.5;
+
+    b {
+      color: var(--color-text-strong);
+    }
+  }
+}
+
+section.images {
+  border-top: 2px solid var(--color-border);
+
+  & > div.full {
+    padding: 0;
+  }
+
+  figure {
+    margin: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  figcaption {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 0.75rem var(--padding);
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+    color: white;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    z-index: 1;
+  }
+
+  img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  a {
+    display: block;
+  }
+}
+
+section.alternatives {
+  border-top: 2px solid var(--color-border);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+
+  @media (max-width: 40rem) {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  & > div {
+    display: flex;
+    flex-direction: column;
+    padding: calc(var(--vertical-padding) / 2) calc(var(--padding) / 2) calc(var(--vertical-padding) / 2 + 0.125rem);
+    text-align: left;
+    gap: 0.5rem;
+
+    @media (max-width: 30rem) {
+      gap: 0.3125rem;
+    }
+  }
+
+  & > div.col1 {
+    border-bottom: 2px solid var(--color-border);
+    @media (max-width: 40rem) {
+      border-bottom: none;
+    }
+  }
+
+  & > div.col2 {
+    border-left: 2px solid var(--color-border);
+    border-bottom: 2px solid var(--color-border);
+    @media (max-width: 40rem) {
+      border-left: none;
+      border-bottom: none;
+      border-top: 2px solid var(--color-border);
+    }
+  }
+
+  & > div.col3 {
+    @media (max-width: 40rem) {
+      border-top: 2px solid var(--color-border);
+    }
+  }
+
+  & > div.col4 {
+    border-left: 2px solid var(--color-border);
+    @media (max-width: 40rem) {
+      border-left: none;
+      border-top: 2px solid var(--color-border);
+    }
+  }
+
+  h3 {
+    margin: 0;
+    letter-spacing: -0.03125rem;
+    text-transform: uppercase;
+    color: var(--color-text-dimmed);
+    font-weight: normal;
+    font-size: 1rem;
+    flex-shrink: 0;
+
+    @media (max-width: 30rem) {
+      font-size: 0.75rem;
+    }
+  }
+}
+
+.command {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  justify-content: flex-start;
+  cursor: pointer;
+  width: 100%;
+
+  code {
+    color: var(--color-text-dimmed);
+    font-size: 1rem;
+
+    @media (max-width: 24rem) {
+      font-size: 0.875rem;
+    }
+  }
+
+  code .highlight {
+    color: var(--color-text-strong);
+    font-weight: 500;
+  }
+
+  .copy {
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+
+    @media (max-width: 40rem) {
+      display: none;
+    }
+  }
+
+  .copy .icon-copy,
+  .copy .icon-check {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .copy .icon-copy {
+    color: var(--color-text-dimmed);
+  }
+
+  .copy .icon-check {
+    color: var(--color-text-strong);
+    display: none;
+  }
+
+  &.success .copy {
+    pointer-events: none;
+  }
+
+  &.success .copy .icon-copy {
+    display: none;
+  }
+
+  &.success .copy .icon-check {
+    display: block;
+  }
+}
+
+section.footer {
+  border-top: 2px solid var(--color-border);
+  display: flex;
+  flex-direction: row;
+
+  & > div {
+    flex: 1;
+    text-align: center;
+    text-transform: uppercase;
+    padding: var(--vertical-padding) 0.5rem;
+  }
+
+  & > div + div {
+    border-left: 2px solid var(--color-border);
+  }
+
+  @media (max-width: 50rem) {
+    & > div.col1,
+    & > div.col2 {
+      flex: 0 0 auto;
+      padding-left: calc(var(--padding) / 2);
+      padding-right: calc(var(--padding) / 2);
+    }
+
+    & > div.col3 {
+      flex: 1;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    flex-wrap: wrap;
+
+    & > div.col1,
+    & > div.col2 {
+      flex: 1;
+    }
+
+    & > div.col3 {
+      flex: 1 0 100%;
+      border-left: none;
+      border-top: 2px solid var(--color-border);
+    }
+  }
+}
+</style>
