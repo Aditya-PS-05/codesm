@@ -1,5 +1,6 @@
 """Terminal UI for codesm - OpenCode style layout"""
 
+import asyncio
 from pathlib import Path
 import logging
 import traceback
@@ -941,7 +942,14 @@ class CodesmApp(App):
             # Generate unique ID for this response's streaming widget
             streaming_widget_id = f"streaming-response-{uuid.uuid4().hex[:8]}"
 
+            chunk_count = 0
+            last_chunk_time = time.time()
             async for chunk in self.agent.chat(message):
+                chunk_count += 1
+                now = time.time()
+                delta = now - last_chunk_time
+                last_chunk_time = now
+                
                 # Check if cancel was requested
                 if self._cancel_requested:
                     logger.info("Chat cancelled by user")
@@ -950,22 +958,31 @@ class CodesmApp(App):
                 if hasattr(chunk, 'type'):
                     if chunk.type == "text":
                         response_text += chunk.content
-                        logger.debug(f"Received text chunk: {chunk.content[:50] if chunk.content else 'empty'}...")
+                        logger.info(f"[STREAM] chunk #{chunk_count} after {delta:.3f}s: {chunk.content[:30] if chunk.content else 'empty'}...")
                         
                         # Create or re-mount streaming widget
                         if streaming_widget is None and chunk.content:
                             streaming_widget = StreamingTextWidget()
                             streaming_widget.id = streaming_widget_id
+                            # Initialize with first chunk's content before mounting
+                            streaming_widget.set_content(chunk.content)
                             await messages_container.mount(streaming_widget)
                             cursor_timer = self.set_interval(0.5, lambda: self._blink_cursor(streaming_widget))
+                            chat_container.scroll_end(animate=False)
                         elif streaming_widget is not None and streaming_widget.parent is None and chunk.content:
                             # Re-mount the widget if it was removed for tool calls
                             await messages_container.mount(streaming_widget)
-                        
-                        # Append text to streaming widget
-                        if streaming_widget and chunk.content:
                             streaming_widget.append_text(chunk.content)
                             chat_container.scroll_end(animate=False)
+                        elif streaming_widget and chunk.content:
+                            # Append text to streaming widget
+                            streaming_widget.append_text(chunk.content)
+                            chat_container.scroll_end(animate=False)
+                        
+                        # Force refresh and yield to event loop
+                        if chunk.content:
+                            self.refresh(layout=True)
+                            await asyncio.sleep(0.01)  # Small delay to ensure TUI processes refresh
                     elif chunk.type == "tool_call":
                         # If streaming widget is mounted, remove it so tool calls appear in order
                         # It will be re-mounted when more text arrives

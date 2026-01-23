@@ -2,6 +2,7 @@
 
 from textual.widgets import Static
 from textual.containers import Vertical
+from textual.reactive import reactive
 from rich.text import Text
 import re
 
@@ -712,6 +713,8 @@ class StreamingTextWidget(Static):
     """Widget to display streaming text response with live updates.
     
     Shows text as it streams in, with a blinking cursor at the end.
+    Uses plain text during streaming for smooth incremental updates,
+    then renders full markdown on completion.
     """
 
     DEFAULT_CSS = """
@@ -729,13 +732,16 @@ class StreamingTextWidget(Static):
         /* Completed state */
     }
     """
+    
+    # Use reactive to auto-trigger updates
+    _content: reactive[str] = reactive("", repaint=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._content = ""
         self._streaming = True
         self._cursor_visible = True
-        self._cursor_frame = 0
+        self._rendered_cache: Text | None = None
+        self._last_rendered_len = 0
         self.set_class(True, "streaming")
 
     def render(self) -> Text:
@@ -743,10 +749,22 @@ class StreamingTextWidget(Static):
         from rich.console import Console
         from rich.theme import Theme
         
+        if self._streaming:
+            # During streaming: use plain text for smooth appending (no flicker)
+            text = Text(self._content, style="white")
+            
+            # Add blinking cursor
+            cursor = "▊" if self._cursor_visible else " "
+            text.append(cursor, style=f"bold {CYAN}")
+            return text
+        
+        # After completion: render full markdown (cached)
+        if self._rendered_cache is not None and self._last_rendered_len == len(self._content):
+            return self._rendered_cache
+        
         text = Text()
         
         if self._content:
-            # Render markdown content
             themed_console = Console(
                 theme=Theme({
                     "markdown.link": f"bold {CYAN}",
@@ -765,30 +783,32 @@ class StreamingTextWidget(Static):
             
             text = Text.from_ansi(capture.get())
         
-        # Add blinking cursor if still streaming
-        if self._streaming:
-            cursor = "▊" if self._cursor_visible else " "
-            text.append(cursor, style=f"bold {CYAN}")
+        # Cache the rendered result
+        self._rendered_cache = text
+        self._last_rendered_len = len(self._content)
         
         return text
 
     def append_text(self, content: str):
-        """Append new text content (streaming)."""
-        self._content += content
-        self.refresh()
+        """Append new text content (streaming) - triggers reactive repaint."""
+        # Use assignment to trigger reactive update (not +=)
+        self._content = self._content + content
+        # Invalidate cache since content changed
+        self._rendered_cache = None
 
     def set_content(self, content: str):
         """Set the full content."""
         self._content = content
-        self.refresh()
+        self._rendered_cache = None
 
     def get_content(self) -> str:
         """Get the current content."""
         return self._content
 
     def mark_complete(self):
-        """Mark streaming as complete (hide cursor)."""
+        """Mark streaming as complete - now render full markdown."""
         self._streaming = False
+        self._rendered_cache = None  # Force re-render with markdown
         self.set_class(False, "streaming")
         self.set_class(True, "complete")
         self.refresh()

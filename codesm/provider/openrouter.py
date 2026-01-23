@@ -112,6 +112,7 @@ class OpenRouterProvider(Provider):
             "model": self.model,
             "messages": full_messages,
             "stream": True,
+            "stream_options": {"include_usage": True},  # Enable proper streaming
             "extra_headers": {
                 "HTTP-Referer": "https://github.com/Aditya-PS-05",
                 "X-Title": "codesm",
