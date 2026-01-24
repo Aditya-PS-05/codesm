@@ -25,14 +25,47 @@ class EditTool(Tool):
                     "type": "string",
                     "description": "New content to insert",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Preview changes without applying (default: false)",
+                    "default": False,
+                },
             },
             "required": ["path", "old_content", "new_content"],
         }
 
     async def execute(self, args: dict, context: dict) -> str:
+        import time
+        start_time = time.time()
+        
         path = Path(args["path"])
         old_content = args["old_content"]
         new_content = args["new_content"]
+        dry_run = args.get("dry_run", False)
+        
+        # Check global dry_run mode from context
+        if context.get("dry_run", False):
+            dry_run = True
+        
+        session = context.get("session")
+        session_id = session.id if session else "default"
+        
+        # Audit log the tool call
+        try:
+            from codesm.audit import audit_tool_call, audit_tool_result, AuditAction, get_audit_log
+            audit_tool_call("edit", {"path": str(path), "dry_run": dry_run}, session_id)
+        except ImportError:
+            pass
+        
+        # Check path permissions
+        try:
+            from codesm.permission import check_path_permission, PathBlockedError
+            working_dir = Path(context.get("cwd", ".")).resolve()
+            check_path_permission(path, working_dir=working_dir)
+        except PathBlockedError as e:
+            return f"Error: {e.reason}"
+        except ImportError:
+            pass
 
         if not path.exists():
             return f"Error: File not found: {path}"
@@ -43,17 +76,49 @@ class EditTool(Tool):
             if old_content not in content:
                 return f"Error: Could not find the specified content to replace"
 
-            session = context.get("session")
+            updated = content.replace(old_content, new_content, 1)
+            
+            # Generate diff for preview
+            diff_output = self._generate_styled_diff(path, old_content, new_content, content)
+            
+            # Calculate lines added/removed/modified
+            old_lines = old_content.split('\n')
+            new_lines = new_content.split('\n')
+            lines_added = len(new_lines) - len(old_lines) if len(new_lines) > len(old_lines) else 0
+            lines_removed = len(old_lines) - len(new_lines) if len(old_lines) > len(new_lines) else 0
+            lines_modified = min(len(old_lines), len(new_lines))
+            
+            # Format stats
+            stats_parts = []
+            if lines_added > 0:
+                stats_parts.append(f"+{lines_added}")
+            if lines_modified > 0:
+                stats_parts.append(f"~{lines_modified}")
+            if lines_removed > 0:
+                stats_parts.append(f"-{lines_removed}")
+            stats = " ".join(stats_parts) if stats_parts else "+0 -0"
+            
+            # DRY RUN: Show preview only
+            if dry_run:
+                file_link = file_link_with_path(path)
+                result = f"**[DRY RUN] Edit Preview** {file_link} {stats}\n\n{diff_output}\n\n*Run with dry_run=false to apply changes*"
+                
+                # Audit the dry run
+                try:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    audit_tool_result("edit", True, f"dry_run preview: {path.name}", duration_ms=duration_ms, session_id=session_id)
+                except:
+                    pass
+                
+                return result
+
             pre_edit_hash = None
             if session:
                 pre_edit_hash = await session.track_snapshot()
 
-            updated = content.replace(old_content, new_content, 1)
-
             # Show diff preview if enabled
             try:
                 from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
-                session_id = session.id if session else "default"
                 await request_diff_preview(
                     session_id=session_id,
                     file_path=str(path),
@@ -67,13 +132,6 @@ class EditTool(Tool):
                 return f"Edit cancelled by user"
             except Exception:
                 pass  # If diff preview fails, proceed anyway
-
-            # Calculate lines added/removed/modified
-            old_lines = old_content.split('\n')
-            new_lines = new_content.split('\n')
-            lines_added = len(new_lines) - len(old_lines) if len(new_lines) > len(old_lines) else 0
-            lines_removed = len(old_lines) - len(new_lines) if len(old_lines) > len(new_lines) else 0
-            lines_modified = min(len(old_lines), len(new_lines))
 
             # Write the file
             path.write_text(updated)
@@ -89,24 +147,23 @@ class EditTool(Tool):
                     description=f"edit {path.name}",
                     snapshot_hash=pre_edit_hash,
                 )
+            
+            # Audit file operation
+            try:
+                from codesm.audit import get_audit_log, AuditAction
+                get_audit_log().log_file_operation(
+                    AuditAction.FILE_EDIT,
+                    str(path),
+                    session_id=session_id,
+                    details={"lines_added": lines_added, "lines_removed": lines_removed},
+                )
+            except:
+                pass
 
             # Format on save
             format_msg = await self._format_file(path, session)
 
-            # Generate styled diff for display
-            diff_output = self._generate_styled_diff(path, old_content, new_content, content)
-
-            # Format result with stats like Amp: +added ~modified -removed
-            stats_parts = []
-            if lines_added > 0:
-                stats_parts.append(f"+{lines_added}")
-            if lines_modified > 0:
-                stats_parts.append(f"~{lines_modified}")
-            if lines_removed > 0:
-                stats_parts.append(f"-{lines_removed}")
-            stats = " ".join(stats_parts) if stats_parts else "+0 -0"
-
-            file_link = file_link_with_path(path, start_line + 1 if 'start_line' in dir() else None)
+            file_link = file_link_with_path(path)
             result = f"**Edit** {file_link} {stats} Diff:\n\n{diff_output}"
 
             # Add format info if formatted
@@ -122,9 +179,22 @@ class EditTool(Tool):
                 patch = await session.get_file_changes(pre_edit_hash)
                 if patch.get("files"):
                     context["_last_patch"] = patch
+            
+            # Audit success
+            try:
+                duration_ms = int((time.time() - start_time) * 1000)
+                audit_tool_result("edit", True, f"edited {path.name}", duration_ms=duration_ms, session_id=session_id)
+            except:
+                pass
 
             return result
         except Exception as e:
+            # Audit failure
+            try:
+                duration_ms = int((time.time() - start_time) * 1000)
+                audit_tool_result("edit", False, error=str(e), duration_ms=duration_ms, session_id=session_id)
+            except:
+                pass
             return f"Error editing file: {e}"
 
     async def _format_file(self, path: Path, session) -> str:

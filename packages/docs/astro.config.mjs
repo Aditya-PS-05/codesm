@@ -47,6 +47,7 @@ export default defineConfig({
           items: [
             "tools",
             "git",
+            "safety",
             "rules",
             "agents",
             "models",

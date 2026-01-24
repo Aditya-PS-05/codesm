@@ -51,12 +51,45 @@ class MCPConfig(BaseModel):
     servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
+class SafetyConfig(BaseModel):
+    """Safety and permission settings"""
+    # Dry run mode - preview changes without applying
+    dry_run: bool = False
+    
+    # Audit logging
+    audit_enabled: bool = True
+    audit_file: str | None = None  # Default: ~/.local/share/codesm/audit.jsonl
+    
+    # Command allowlist/blocklist (glob patterns)
+    command_allowlist: list[str] = Field(default_factory=list)  # Empty = allow all
+    command_blocklist: list[str] = Field(default_factory=lambda: [
+        "rm -rf /", "rm -rf /*", "sudo rm -rf", ":(){ :|:& };:",  # Fork bomb
+        "dd if=/dev/zero", "mkfs.*", "> /dev/sda",
+    ])
+    
+    # Path restrictions (glob patterns)
+    guarded_paths: list[str] = Field(default_factory=lambda: [
+        "~/.ssh/*", "~/.gnupg/*", "~/.aws/*", "/etc/*", "/usr/*", "/bin/*",
+    ])
+    allowed_paths: list[str] = Field(default_factory=list)  # Empty = allow cwd and children
+    
+    # Permission defaults
+    auto_approve_read: bool = True
+    auto_approve_write: bool = False
+    auto_approve_bash: bool = False
+    
+    # Sandbox settings
+    sandbox_bash: bool = False  # Run bash in isolated environment
+    sandbox_timeout: int = 120  # Max execution time in seconds
+
+
 class Config(BaseModel):
     """Main configuration"""
     model: ModelConfig = Field(default_factory=ModelConfig)
     tools: ToolConfig = Field(default_factory=ToolConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
     working_directory: Path = Field(default_factory=Path.cwd)
 
     class Config:

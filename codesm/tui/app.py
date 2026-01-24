@@ -625,8 +625,12 @@ class CodesmApp(App):
             self._fork_session()
         elif cmd == "/branches":
             self._show_branches()
+        elif cmd == "/dryrun":
+            self._toggle_dry_run()
+        elif cmd == "/audit":
+            self._show_audit_log()
         elif cmd == "/help":
-            self.notify("Commands: /init, /new, /fork, /branches, /models, /mode, /rush, /smart, /session, /status, /theme, /connect, /help")
+            self.notify("Commands: /init, /new, /fork, /branches, /dryrun, /audit, /models, /mode, /session, /status, /theme, /connect, /help")
         elif cmd == "/status":
             mode_str = "Rush" if self._mode == "rush" else "Smart"
             self.notify(f"Mode: {mode_str} | Model: {self.model} | Dir: {self.directory}")
@@ -1598,6 +1602,50 @@ class CodesmApp(App):
         if len(branches) > 5:
             branch_list += f" (+{len(branches) - 5} more)"
         self.notify(f"Branches: {branch_list}")
+    
+    def _toggle_dry_run(self):
+        """Toggle dry-run mode (preview changes without applying)"""
+        if not hasattr(self, '_dry_run_mode'):
+            self._dry_run_mode = False
+        
+        self._dry_run_mode = not self._dry_run_mode
+        
+        if self._dry_run_mode:
+            self.notify("🔍 Dry-run mode ENABLED - changes will be previewed only")
+        else:
+            self.notify("✅ Dry-run mode DISABLED - changes will be applied")
+    
+    def _show_audit_log(self):
+        """Show recent agent actions from audit log"""
+        try:
+            from codesm.audit import get_audit_log
+            
+            audit = get_audit_log()
+            session_id = self.agent.session.id if self.agent and self.agent.session else None
+            
+            # Get recent entries
+            entries = audit.get_recent(count=20, session_id=session_id)
+            
+            if not entries:
+                self.notify("No audit entries yet")
+                return
+            
+            # Format for display
+            display = audit.format_for_display(entries, verbose=False)
+            
+            # Show in a notification (limited)
+            lines = display.split("\n")
+            if len(lines) > 5:
+                preview = "\n".join(lines[:5]) + f"\n... (+{len(lines) - 5} more)"
+            else:
+                preview = display
+            
+            self.notify(f"Recent actions:\n{preview}")
+            
+        except ImportError:
+            self.notify("Audit logging not available")
+        except Exception as e:
+            self.notify(f"Error loading audit log: {e}")
 
     def action_clear(self):
         """Clear the message history display"""

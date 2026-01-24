@@ -1,0 +1,292 @@
+---
+title: Safety & Permissions
+description: Security features for safe agent operations.
+---
+
+codesm includes comprehensive safety features to protect your system and data.
+
+---
+
+## Overview
+
+Safety features include:
+- **Permission prompts** - Confirm before destructive operations
+- **Command blocklist** - Block dangerous commands entirely
+- **Path guards** - Protect sensitive directories
+- **Audit logging** - Track all agent actions
+- **Dry-run mode** - Preview changes without applying
+
+---
+
+## Permission Prompts
+
+Destructive operations require user confirmation:
+
+### Git Operations
+- `commit`, `push`, `merge`, `rebase`
+- `reset`, `checkout`, `stash`
+- Any command with `--force` or `--hard`
+
+### Dangerous Commands
+- `rm -rf`, `sudo`, `chmod`, `chown`
+- `dd`, `mkfs`, `fdisk`
+- Piping to shell: `curl | sh`
+
+### GitHub CLI
+- `pr create`, `pr merge`
+- `issue create`, `release create`
+
+When triggered, you'll see:
+
+```
+┌─────────────────────────────────────────┐
+│  Allow git command?                     │
+│                                         │
+│  git push origin main                   │
+│                                         │
+│  [Allow Once] [Allow Always] [Deny]     │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Command Blocklist
+
+Some commands are **always blocked** and cannot be executed:
+
+```python
+# Catastrophic commands
+"rm -rf /"
+"rm -rf /*"
+":(){ :|:& };:"  # Fork bomb
+"dd if=/dev/zero of=/dev/sda"
+"> /dev/sda"
+```
+
+### Custom Blocklist
+
+Add patterns to block in config:
+
+```json title="codesm.json"
+{
+  "safety": {
+    "command_blocklist": [
+      "npm publish",
+      "docker push *"
+    ]
+  }
+}
+```
+
+### Allowlist Mode
+
+Restrict to only allowed commands:
+
+```json title="codesm.json"
+{
+  "safety": {
+    "command_allowlist": [
+      "git *",
+      "npm run *",
+      "python *"
+    ]
+  }
+}
+```
+
+---
+
+## Guarded Paths
+
+Sensitive directories are protected from file operations:
+
+```python
+DEFAULT_GUARDED_PATHS = [
+    "~/.ssh/*",
+    "~/.gnupg/*",
+    "~/.aws/*",
+    "/etc/*",
+    "/usr/*",
+    "/bin/*",
+]
+```
+
+The agent cannot read, write, or edit files in guarded paths.
+
+### Custom Guarded Paths
+
+```json title="codesm.json"
+{
+  "safety": {
+    "guarded_paths": [
+      "~/.ssh/*",
+      "~/secrets/*",
+      "*.env"
+    ]
+  }
+}
+```
+
+### Allowed Paths
+
+Restrict operations to specific paths:
+
+```json title="codesm.json"
+{
+  "safety": {
+    "allowed_paths": [
+      "~/projects/*",
+      "/tmp/codesm/*"
+    ]
+  }
+}
+```
+
+---
+
+## Audit Logging
+
+All agent actions are logged for review.
+
+### View Recent Actions
+
+```bash frame="none"
+/audit
+```
+
+Shows recent tool calls, file operations, and permission requests.
+
+### Audit Log Location
+
+```
+~/.local/share/codesm/audit.jsonl
+```
+
+### Log Entry Format
+
+```json
+{
+  "timestamp": "2024-01-15T14:30:00",
+  "action": "file_edit",
+  "tool": "edit",
+  "session_id": "session_123",
+  "details": {
+    "path": "/home/user/project/main.py",
+    "lines_added": 5,
+    "lines_removed": 2
+  },
+  "success": true,
+  "duration_ms": 45
+}
+```
+
+### Configuration
+
+```json title="codesm.json"
+{
+  "safety": {
+    "audit_enabled": true,
+    "audit_file": "~/.local/share/codesm/audit.jsonl"
+  }
+}
+```
+
+---
+
+## Dry-Run Mode
+
+Preview all changes without applying them.
+
+### Toggle via Command
+
+```bash frame="none"
+/dryrun
+```
+
+When enabled:
+- File edits show diff preview only
+- File writes show what would be created
+- Bash commands show what would run
+
+### Per-Tool Dry Run
+
+```txt frame="none"
+Edit main.py with dry_run=true
+```
+
+The agent will preview without applying.
+
+### Global Configuration
+
+```json title="codesm.json"
+{
+  "safety": {
+    "dry_run": true
+  }
+}
+```
+
+---
+
+## Safety Configuration Reference
+
+```json title="codesm.json"
+{
+  "safety": {
+    "dry_run": false,
+    "audit_enabled": true,
+    "audit_file": null,
+    
+    "command_allowlist": [],
+    "command_blocklist": [],
+    
+    "guarded_paths": [
+      "~/.ssh/*",
+      "~/.gnupg/*"
+    ],
+    "allowed_paths": [],
+    
+    "auto_approve_read": true,
+    "auto_approve_write": false,
+    "auto_approve_bash": false,
+    
+    "sandbox_bash": false,
+    "sandbox_timeout": 120
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `dry_run` | `false` | Global dry-run mode |
+| `audit_enabled` | `true` | Enable audit logging |
+| `audit_file` | `null` | Custom audit log path |
+| `command_blocklist` | `[]` | Commands to always block |
+| `command_allowlist` | `[]` | If set, only these commands allowed |
+| `guarded_paths` | `[...]` | Protected directories |
+| `allowed_paths` | `[]` | If set, only these paths allowed |
+| `auto_approve_read` | `true` | Auto-approve file reads |
+| `auto_approve_write` | `false` | Auto-approve file writes |
+| `auto_approve_bash` | `false` | Auto-approve bash commands |
+| `sandbox_bash` | `false` | Run bash in sandbox (future) |
+| `sandbox_timeout` | `120` | Max command execution time |
+
+---
+
+## YOLO Mode
+
+For trusted environments, disable all prompts:
+
+```json title="codesm.json"
+{
+  "safety": {
+    "auto_approve_read": true,
+    "auto_approve_write": true,
+    "auto_approve_bash": true
+  }
+}
+```
+
+:::caution
+Only use in isolated/development environments. The agent will execute any command without confirmation.
+:::

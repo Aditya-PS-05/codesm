@@ -16,6 +16,8 @@ COMMANDS = [
     {"cmd": "/mode", "desc": "switch mode (smart/rush)"},
     {"cmd": "/rush", "desc": "rush mode - fast & cheap"},
     {"cmd": "/smart", "desc": "smart mode - full capability"},
+    {"cmd": "/dryrun", "desc": "toggle dry-run mode (preview only)"},
+    {"cmd": "/audit", "desc": "show recent agent actions"},
     {"cmd": "/agents", "desc": "list agents"},
     {"cmd": "/session", "desc": "list sessions"},
     {"cmd": "/status", "desc": "show status"},

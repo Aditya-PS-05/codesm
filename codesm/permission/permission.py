@@ -1,10 +1,12 @@
 """Permission system for requiring user confirmation before sensitive operations."""
 
 import asyncio
+import fnmatch
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Callable, Optional
 
 
@@ -48,6 +50,22 @@ class PermissionDeniedError(Exception):
         super().__init__(self.message)
 
 
+class PathBlockedError(Exception):
+    """Raised when a path is blocked by security rules."""
+    def __init__(self, path: str, reason: str = ""):
+        self.path = path
+        self.reason = reason or f"Path blocked by security policy: {path}"
+        super().__init__(self.reason)
+
+
+class CommandBlockedError(Exception):
+    """Raised when a command is blocked by security rules."""
+    def __init__(self, command: str, reason: str = ""):
+        self.command = command
+        self.reason = reason or f"Command blocked by security policy: {command}"
+        super().__init__(self.reason)
+
+
 # Git commands that require user confirmation
 GIT_COMMANDS_REQUIRING_PERMISSION = [
     "commit", "push", "merge", "rebase", "reset", "checkout",
@@ -59,6 +77,28 @@ GIT_COMMANDS_REQUIRING_PERMISSION = [
 DANGEROUS_COMMANDS = [
     "rm -rf", "rm -r", "rmdir", "sudo", "chmod", "chown",
     "dd", "mkfs", "fdisk", "> /dev/", "curl | sh", "curl | bash",
+]
+
+# Default blocked commands (catastrophic)
+DEFAULT_BLOCKED_COMMANDS = [
+    "rm -rf /",
+    "rm -rf /*",
+    "sudo rm -rf /",
+    ":(){ :|:& };:",  # Fork bomb
+    "dd if=/dev/zero of=/dev/sda",
+    "> /dev/sda",
+]
+
+# Default guarded paths
+DEFAULT_GUARDED_PATHS = [
+    "~/.ssh/*",
+    "~/.gnupg/*", 
+    "~/.aws/*",
+    "~/.config/codesm/credentials*",
+    "/etc/*",
+    "/usr/*",
+    "/bin/*",
+    "/sbin/*",
 ]
 
 
@@ -214,3 +254,111 @@ def requires_permission(command: str) -> tuple[bool, str, str]:
                 return (True, "github", f"GitHub {gh_cmd}")
     
     return (False, "", "")
+
+
+def is_command_blocked(
+    command: str,
+    blocklist: Optional[list[str]] = None,
+    allowlist: Optional[list[str]] = None,
+) -> tuple[bool, str]:
+    """Check if a command is blocked by security rules.
+    
+    Args:
+        command: The command to check
+        blocklist: Patterns to block (glob-style)
+        allowlist: Patterns to allow (if set, only these are allowed)
+        
+    Returns:
+        (is_blocked, reason)
+    """
+    cmd = command.strip()
+    
+    # Check default blocked commands first (always blocked)
+    for blocked in DEFAULT_BLOCKED_COMMANDS:
+        if blocked in cmd or cmd.startswith(blocked):
+            return (True, f"Blocked: catastrophic command pattern '{blocked}'")
+    
+    # Check custom blocklist
+    if blocklist:
+        for pattern in blocklist:
+            if fnmatch.fnmatch(cmd, pattern) or pattern in cmd:
+                return (True, f"Blocked by rule: {pattern}")
+    
+    # If allowlist is set, command must match at least one pattern
+    if allowlist:
+        for pattern in allowlist:
+            if fnmatch.fnmatch(cmd, pattern) or cmd.startswith(pattern.rstrip("*")):
+                return (False, "")
+        return (True, "Command not in allowlist")
+    
+    return (False, "")
+
+
+def is_path_allowed(
+    path: str | Path,
+    working_dir: Optional[Path] = None,
+    guarded_paths: Optional[list[str]] = None,
+    allowed_paths: Optional[list[str]] = None,
+) -> tuple[bool, str]:
+    """Check if a path is allowed for file operations.
+    
+    Args:
+        path: The path to check
+        working_dir: Current working directory (paths must be within)
+        guarded_paths: Patterns for protected paths
+        allowed_paths: If set, only these paths are allowed
+        
+    Returns:
+        (is_allowed, reason)
+    """
+    path = Path(path).expanduser().resolve()
+    path_str = str(path)
+    
+    # Expand guarded paths and check
+    guards = guarded_paths or DEFAULT_GUARDED_PATHS
+    for pattern in guards:
+        expanded = str(Path(pattern).expanduser())
+        if fnmatch.fnmatch(path_str, expanded):
+            return (False, f"Path matches guarded pattern: {pattern}")
+    
+    # If allowed_paths is set, path must match
+    if allowed_paths:
+        for pattern in allowed_paths:
+            expanded = str(Path(pattern).expanduser())
+            if fnmatch.fnmatch(path_str, expanded) or path_str.startswith(expanded.rstrip("*")):
+                return (True, "")
+        return (False, "Path not in allowed list")
+    
+    # If working_dir is set, path must be within it
+    if working_dir:
+        working_dir = working_dir.resolve()
+        try:
+            path.relative_to(working_dir)
+            return (True, "")
+        except ValueError:
+            return (False, f"Path outside working directory: {working_dir}")
+    
+    return (True, "")
+
+
+def check_path_permission(
+    path: str | Path,
+    working_dir: Optional[Path] = None,
+    guarded_paths: Optional[list[str]] = None,
+    allowed_paths: Optional[list[str]] = None,
+) -> None:
+    """Check path permission and raise PathBlockedError if blocked."""
+    allowed, reason = is_path_allowed(path, working_dir, guarded_paths, allowed_paths)
+    if not allowed:
+        raise PathBlockedError(str(path), reason)
+
+
+def check_command_permission(
+    command: str,
+    blocklist: Optional[list[str]] = None,
+    allowlist: Optional[list[str]] = None,
+) -> None:
+    """Check command permission and raise CommandBlockedError if blocked."""
+    blocked, reason = is_command_blocked(command, blocklist, allowlist)
+    if blocked:
+        raise CommandBlockedError(command, reason)

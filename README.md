@@ -421,8 +421,8 @@ The system uses task-specialized models across three tiers:
 - [x] **AGENTS.md Support** - Read project-specific instructions automatically
 - [x] **Cross-Session Memory** - Remember user preferences and past solutions
 - [x] **Codebase Indexing** - Pre-index repos for instant semantic search
-- [ ] **Git Integration** - Auto-commit, branch management, PR creation
-- [ ] **Conversation Branching** - Fork conversations to explore alternatives
+- [x] **Git Integration** - Auto-commit, branch management, PR creation
+- [x] **Conversation Branching** - Fork conversations to explore alternatives
 
 ### Important (Competitive Advantages)
 
@@ -442,10 +442,10 @@ The system uses task-specialized models across three tiers:
 
 #### Safety & Permissions
 - [ ] **Sandboxed Execution** - Run bash commands in isolated environment
-- [ ] **Permission Prompts** - Ask before destructive operations
-- [ ] **Allowlist/Blocklist** - Configure which commands/paths are allowed
-- [ ] **Audit Log** - Track all agent actions for review
-- [ ] **Dry Run Mode** - Preview all changes without applying
+- [x] **Permission Prompts** - Ask before destructive operations
+- [x] **Allowlist/Blocklist** - Configure which commands/paths are allowed
+- [x] **Audit Log** - Track all agent actions for review
+- [x] **Dry Run Mode** - Preview all changes without applying
 
 ### Nice to Have (Killer Features)
 

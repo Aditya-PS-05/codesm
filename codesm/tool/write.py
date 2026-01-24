@@ -21,30 +21,93 @@ class WriteTool(Tool):
                     "type": "string",
                     "description": "Content to write",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Preview changes without applying (default: false)",
+                    "default": False,
+                },
             },
             "required": ["path", "content"],
         }
     
     async def execute(self, args: dict, context: dict) -> str:
+        import time
+        start_time = time.time()
+        
         path = Path(args["path"])
         content = args["content"]
+        dry_run = args.get("dry_run", False)
+        
+        # Check global dry_run mode from context
+        if context.get("dry_run", False):
+            dry_run = True
+        
+        session = context.get("session")
+        session_id = session.id if session else "default"
+        
+        # Audit log the tool call
+        try:
+            from codesm.audit import audit_tool_call, audit_tool_result, AuditAction, get_audit_log
+            audit_tool_call("write", {"path": str(path), "dry_run": dry_run}, session_id)
+        except ImportError:
+            pass
+        
+        # Check path permissions
+        try:
+            from codesm.permission import check_path_permission, PathBlockedError
+            working_dir = Path(context.get("cwd", ".")).resolve()
+            check_path_permission(path, working_dir=working_dir)
+        except PathBlockedError as e:
+            return f"Error: {e.reason}"
+        except ImportError:
+            pass
         
         try:
-            session = context.get("session")
-            pre_write_hash = None
-            if session:
-                pre_write_hash = await session.track_snapshot()
-            
             old_content = ""
             is_new_file = not path.exists()
             if not is_new_file:
                 old_content = path.read_text()
             
+            # Generate diff/preview
+            new_lines = content.split('\n')
+            if is_new_file:
+                # New file - show all lines as added
+                diff_lines = []
+                for i, line in enumerate(new_lines[:20]):  # Limit preview
+                    diff_lines.append(f"+ {i+1:3d}    {line}")
+                if len(new_lines) > 20:
+                    diff_lines.append(f"  ... ({len(new_lines) - 20} more lines)")
+                diff_output = "```diff\n" + '\n'.join(diff_lines) + "\n```"
+                stats = f"+{len(new_lines)} lines (new file)"
+            else:
+                # Existing file - show diff
+                diff_output = self._generate_diff(old_content, content)
+                old_lines = old_content.split('\n')
+                added = len(new_lines) - len(old_lines) if len(new_lines) > len(old_lines) else 0
+                removed = len(old_lines) - len(new_lines) if len(old_lines) > len(new_lines) else 0
+                stats = f"+{added} -{removed}"
+            
+            # DRY RUN: Show preview only
+            if dry_run:
+                file_link = file_link_with_path(path)
+                result = f"**[DRY RUN] Write Preview** {file_link} {stats}\n\n{diff_output}\n\n*Run with dry_run=false to apply changes*"
+                
+                try:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    audit_tool_result("write", True, f"dry_run preview: {path.name}", duration_ms=duration_ms, session_id=session_id)
+                except:
+                    pass
+                
+                return result
+            
+            pre_write_hash = None
+            if session:
+                pre_write_hash = await session.track_snapshot()
+            
             # Show diff preview if enabled (for overwrites, not new files)
             if not is_new_file:
                 try:
                     from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
-                    session_id = session.id if session else "default"
                     await request_diff_preview(
                         session_id=session_id,
                         file_path=str(path),
@@ -62,6 +125,18 @@ class WriteTool(Tool):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
             
+            # Audit file operation
+            try:
+                from codesm.audit import get_audit_log, AuditAction
+                get_audit_log().log_file_operation(
+                    AuditAction.FILE_WRITE,
+                    str(path),
+                    session_id=session_id,
+                    details={"is_new": is_new_file, "lines": len(new_lines)},
+                )
+            except:
+                pass
+            
             # Record write in undo history
             if session:
                 history = session.get_undo_history()
@@ -77,26 +152,8 @@ class WriteTool(Tool):
             # Format on save
             format_msg = await self._format_file(path, session)
             
-            # Generate diff output
-            new_lines = content.split('\n')
-            if is_new_file:
-                # New file - show all lines as added
-                diff_lines = []
-                for i, line in enumerate(new_lines[:20]):  # Limit preview
-                    diff_lines.append(f"+ {i+1:3d}    {line}")
-                if len(new_lines) > 20:
-                    diff_lines.append(f"  ... ({len(new_lines) - 20} more lines)")
-                diff_output = "```diff\n" + '\n'.join(diff_lines) + "\n```"
-                file_link = file_link_with_path(path)
-                result = f"**Write** {file_link} +{len(new_lines)} lines (new file)\n\n{diff_output}"
-            else:
-                # Existing file - show diff
-                diff_output = self._generate_diff(old_content, content)
-                old_lines = old_content.split('\n')
-                added = len(new_lines) - len(old_lines) if len(new_lines) > len(old_lines) else 0
-                removed = len(old_lines) - len(new_lines) if len(old_lines) > len(new_lines) else 0
-                file_link = file_link_with_path(path)
-                result = f"**Write** {file_link} +{added} -{removed}\n\n{diff_output}"
+            file_link = file_link_with_path(path)
+            result = f"**Write** {file_link} {stats}\n\n{diff_output}"
             
             # Add format info if formatted
             if format_msg:
@@ -111,8 +168,21 @@ class WriteTool(Tool):
                 if patch.get("files"):
                     context["_last_patch"] = patch
             
+            # Audit success
+            try:
+                duration_ms = int((time.time() - start_time) * 1000)
+                audit_tool_result("write", True, f"wrote {path.name}", duration_ms=duration_ms, session_id=session_id)
+            except:
+                pass
+            
             return result
         except Exception as e:
+            # Audit failure
+            try:
+                duration_ms = int((time.time() - start_time) * 1000)
+                audit_tool_result("write", False, error=str(e), duration_ms=duration_ms, session_id=session_id)
+            except:
+                pass
             return f"Error writing file: {e}"
 
     async def _format_file(self, path: Path, session) -> str:
