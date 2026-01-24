@@ -102,7 +102,7 @@ class TestSkillManager:
     
     def test_discover_skills(self, skill_file, temp_workspace):
         """Test skill discovery"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         assert "test-skill" in manager._discovered
         skill = manager.get("test-skill")
@@ -111,7 +111,7 @@ class TestSkillManager:
     
     def test_list_skills(self, skill_file, temp_workspace):
         """Test listing skills"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         skill_list = manager.list()
         assert len(skill_list) == 1
@@ -120,7 +120,7 @@ class TestSkillManager:
     
     def test_load_unload_skill(self, skill_file, temp_workspace):
         """Test loading and unloading skills"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         # Load
         skill = manager.load("test-skill")
@@ -136,14 +136,14 @@ class TestSkillManager:
     
     def test_load_nonexistent(self, temp_workspace):
         """Test loading a skill that doesn't exist"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         skill = manager.load("nonexistent")
         assert skill is None
     
     def test_auto_load_triggers(self, skill_file, temp_workspace):
         """Test auto-loading based on triggers"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         # Should trigger on "test"
         loaded = manager.auto_load_for_message("Can you test this code?")
@@ -158,7 +158,8 @@ class TestSkillManager:
         """Test that auto-load can be disabled"""
         manager = SkillManager(
             workspace_dir=temp_workspace,
-            auto_triggers_enabled=False
+            auto_triggers_enabled=False,
+            include_global=False
         )
         
         loaded = manager.auto_load_for_message("test this")
@@ -167,7 +168,7 @@ class TestSkillManager:
     
     def test_render_active_prompt(self, skill_file, temp_workspace):
         """Test rendering active skills for prompt"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         manager.load("test-skill")
         
         prompt = manager.render_active_for_prompt()
@@ -178,14 +179,14 @@ class TestSkillManager:
     
     def test_render_empty_prompt(self, temp_workspace):
         """Test rendering when no skills active"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         prompt = manager.render_active_for_prompt()
         assert prompt == ""
     
     def test_get_resource_path(self, skill_file, temp_workspace):
         """Test getting resource path"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         path = manager.get_resource_path("test-skill", "template.txt")
         assert path is not None
@@ -194,7 +195,7 @@ class TestSkillManager:
     
     def test_get_resource_path_traversal(self, skill_file, temp_workspace):
         """Test that path traversal is blocked"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         
         # Try to escape skill directory
         path = manager.get_resource_path("test-skill", "../../../etc/passwd")
@@ -202,13 +203,59 @@ class TestSkillManager:
     
     def test_clear(self, skill_file, temp_workspace):
         """Test clearing all active skills"""
-        manager = SkillManager(workspace_dir=temp_workspace)
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
         manager.load("test-skill")
         
         assert len(manager.active()) == 1
         
         manager.clear()
         assert len(manager.active()) == 0
+    
+    def test_keyword_matching(self, temp_workspace):
+        """Test keyword-based skill matching"""
+        # Create a skill with specific keywords
+        skill_dir = temp_workspace / ".codesm" / "skills" / "react-skill"
+        skill_dir.mkdir(parents=True)
+        
+        (skill_dir / "SKILL.md").write_text("""---
+name: react-performance
+description: React performance optimization tips
+---
+
+# React Performance
+
+Optimize React components.
+""")
+        
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
+        
+        # Should match on 'react' and 'performance'
+        matches = manager.match("help me with react performance")
+        assert len(matches) >= 1
+        assert matches[0].skill.name == "react-performance"
+        assert matches[0].match_type == "keyword"
+    
+    def test_file_context_matching(self, temp_workspace):
+        """Test file-context skill matching"""
+        skill_dir = temp_workspace / ".codesm" / "skills" / "ts-skill"
+        skill_dir.mkdir(parents=True)
+        
+        (skill_dir / "SKILL.md").write_text("""---
+name: typescript-guide
+description: TypeScript best practices
+---
+
+# TypeScript Guide
+
+Write better TypeScript.
+""")
+        
+        manager = SkillManager(workspace_dir=temp_workspace, include_global=False)
+        
+        # Should match on .ts file context
+        matches = manager.match("help", context_files=["src/app.ts"])
+        assert len(matches) >= 1
+        assert matches[0].skill.name == "typescript-guide"
 
 
 class TestSimpleYamlParser:

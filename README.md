@@ -302,11 +302,12 @@ codesm supports two agent modes for different task types:
   - [ ] `codesm tools show` - Show tool details
   - [ ] `codesm tools make` - Create skeleton tool in toolbox
   - [ ] `codesm tools use` - Invoke a tool directly from CLI
-- [ ] **Skill Management CLI**:
-  - [ ] `codesm skill add` - Install skills from source
-  - [ ] `codesm skill list` - List available skills
-  - [ ] `codesm skill remove` - Remove installed skill
-  - [ ] `codesm skill info` - Show skill information
+- [x] **Skill Management CLI**:
+  - [x] `skill browse` - Browse skills.sh registry (vercel-labs/agent-skills)
+  - [x] `skill fetch <name>` - Fetch skill from skills.sh
+  - [x] `skill suggest` - Auto-suggest skills based on file context
+  - [x] `skill list` - List local project skills
+  - [x] `skill load/unload` - Load/unload local skills
 - [ ] **Permissions CLI**:
   - [ ] `codesm permissions list` - List permission rules
   - [ ] `codesm permissions test` - Test permissions
@@ -487,7 +488,7 @@ The system uses task-specialized models across three tiers:
 - [ ] **Codebase-Specific Fine-tuning** - LoRA adapters for your repos
 - [ ] **Multi-Agent Debates** - Multiple agents argue to find best solution
 - [ ] **Autonomous Mode** - Run overnight, wake user for decisions
-- [ ] **Plugin Marketplace** - Community-built skills and extensions
+- [x] **Plugin Marketplace** - skills.sh registry integration (vercel-labs/agent-skills)
 - [ ] **Natural Language Git** - "Undo my last 3 commits" → executes git commands
 - [ ] **Code Generation Streaming** - Token-by-token code preview as it's written
 - [ ] **Predictive Actions** - Suggest next action before user asks
@@ -501,7 +502,7 @@ The system uses task-specialized models across three tiers:
 - **Multi-provider** - Not locked to Anthropic; use any LLM
 - **Rust core** - Performance-critical ops in Rust (grep, file ops)
 - **Self-hostable** - No cloud dependency, run fully local
-- **Custom skills** - User-defined agent behaviors
+- **Custom skills** - User-defined agent behaviors + skills.sh registry
 
 ### vs Opencode
 - **Python ecosystem** - Easier contribution, rich ML/AI libraries

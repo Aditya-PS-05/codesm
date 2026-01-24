@@ -10,104 +10,58 @@ Skills are specialized instruction sets that enhance codesm for specific tasks.
 ## What are Skills?
 
 Skills provide:
-- Domain-specific instructions
+- Domain-specific instructions and best practices
 - Specialized workflows
 - Pre-configured tool usage
-- Best practice templates
+- Performance optimization guidelines
 
 Think of skills as "expert modes" for different types of work.
 
 ---
 
-## Using Skills
+## skills.sh Integration
 
-### Loading a Skill
+codesm integrates with [skills.sh](https://skills.sh) - the skill registry by Vercel Labs.
 
-Use the `/skill` command:
-
-```bash frame="none"
-/skill react
-```
-
-Or reference in your prompt:
-
-```txt frame="none"
-Using the react skill, create a new component
-```
-
-### Listing Skills
+### Browse Available Skills
 
 ```bash frame="none"
-/skills
+# The agent can browse the registry
+skill browse
 ```
 
----
+Available skills from `vercel-labs/agent-skills`:
+- **react-best-practices** - React/Next.js optimization (57 rules)
+- **web-design-guidelines** - UI/UX best practices
+- **claude.ai** - Claude-specific optimizations
 
-## Built-in Skills
+### Fetch a Skill
 
-| Skill | Description |
-|-------|-------------|
-| `react` | React component development |
-| `python` | Python best practices |
-| `typescript` | TypeScript patterns |
-| `testing` | Test writing |
-| `docs` | Documentation |
-| `refactoring` | Code improvement |
-| `debugging` | Bug finding |
-| `security` | Security review |
+```bash frame="none"
+# Fetch by name from skills.sh
+skill fetch react-best-practices
 
----
-
-## Skill Structure
-
-Skills are Markdown files with frontmatter:
-
-```markdown title="skills/react.md"
----
-name: react
-description: React component development
-tools: [read, write, edit, grep]
----
-
-# React Development
-
-When creating React components:
-
-1. Use functional components with hooks
-2. Follow the component structure:
-   - Props interface
-   - Component function
-   - Styled components or CSS modules
-3. Include proper TypeScript types
-4. Add JSDoc comments
-
-## File Naming
-
-- Components: `PascalCase.tsx`
-- Hooks: `useCamelCase.ts`
-- Utils: `camelCase.ts`
-
-## Example Component
-
-\`\`\`tsx
-interface ButtonProps {
-  label: string;
-  onClick: () => void;
-}
-
-export function Button({ label, onClick }: ButtonProps) {
-  return (
-    <button onClick={onClick}>
-      {label}
-    </button>
-  );
-}
-\`\`\`
+# Fetch from custom GitHub repo
+skill fetch --source owner/repo/path
 ```
 
+### Auto-Suggest Skills
+
+The agent automatically suggests skills based on context:
+
+```bash frame="none"
+# Suggest based on files being edited
+skill suggest files=["src/App.tsx", "components/Button.tsx"]
+```
+
+**Triggers:**
+- `.tsx/.jsx` files → react-best-practices
+- `.css/.scss` files → web-design-guidelines
+- Mentions of "react", "next" → react-best-practices
+
 ---
 
-## Custom Skills
+## Local Skills
 
 ### Project Skills
 
@@ -115,10 +69,11 @@ Create skills in your project:
 
 ```
 project/
-└── .codesm/
-    └── skills/
-        ├── api.md
-        └── components.md
+├── .codesm/
+│   └── skills/
+│       └── SKILL.md
+└── skills/
+    └── SKILL.md
 ```
 
 ### Global Skills
@@ -126,96 +81,124 @@ project/
 Add to your config directory:
 
 ```
-~/.config/codesm/skills/
-├── my-skill.md
-└── another-skill.md
+~/.codesm/skills/SKILL.md
+~/.claude/skills/SKILL.md
 ```
 
 ---
 
-## Skill Properties
+## SKILL.md Format
 
-### Frontmatter
+Skills follow the [skills.sh format](https://skills.sh):
 
-```yaml
+```markdown title="SKILL.md"
 ---
-name: skill-name
+name: my-skill
 description: What this skill does
-tools: [read, edit, grep]
-model: claude-sonnet-4-20250514
-auto_load: false
 triggers:
-  - pattern: "create.*component"
-  - pattern: "react"
+  - "*.tsx"
+  - "react"
 ---
+
+# My Skill Instructions
+
+When working on this type of code:
+
+1. Follow these patterns
+2. Use these best practices
+3. Avoid these anti-patterns
+
+## Examples
+
+\`\`\`tsx
+// Good pattern
+export function Component() { ... }
+\`\`\`
 ```
+
+### Frontmatter Properties
 
 | Property | Description |
 |----------|-------------|
 | `name` | Unique identifier |
 | `description` | Human-readable description |
-| `tools` | Required tools |
-| `model` | Preferred model |
-| `auto_load` | Load automatically |
-| `triggers` | Patterns that trigger loading |
-
-### Content
-
-The Markdown content is injected into the system prompt when the skill is active.
+| `triggers` | File patterns or keywords that trigger loading |
 
 ---
 
-## Auto-Loading Skills
+## Using Skills
 
-Skills can load automatically based on context:
+### In Prompts
 
-```yaml
----
-name: python
-auto_load: true
-triggers:
-  - file_pattern: "*.py"
-  - directory: "python/"
----
-```
-
-Or based on prompt patterns:
-
-```yaml
-triggers:
-  - pattern: "django"
-  - pattern: "flask"
-  - pattern: "python"
-```
-
----
-
-## Combining Skills
-
-Load multiple skills:
-
-```bash frame="none"
-/skill react typescript testing
-```
-
-Or in prompts:
+Just describe what you're working on - the agent auto-fetches relevant skills:
 
 ```txt frame="none"
-Using react and testing skills, create a tested component
+Help me optimize this React component
+```
+
+The agent will automatically fetch `react-best-practices` from skills.sh.
+
+### Manual Loading
+
+```bash frame="none"
+# Load a local skill
+skill load my-skill
+
+# Show active skills
+skill active
+
+# Unload a skill
+skill unload my-skill
 ```
 
 ---
 
-## Skill Discovery
+## Skill Tool Actions
 
-Find community skills:
+| Action | Description |
+|--------|-------------|
+| `suggest` | Auto-suggest skills based on file context |
+| `browse` | List skills from skills.sh registry |
+| `fetch` | Fetch skill by name or custom source |
+| `list` | Show local project skills |
+| `load` | Load a local skill |
+| `unload` | Unload a skill from context |
+| `active` | Show currently loaded skills |
+| `show` | Display skill content without loading |
 
-```bash frame="none"
-/skills search react
+---
+
+## Creating Custom Skills
+
+1. Create `SKILL.md` in `.codesm/skills/` or `skills/`
+2. Add frontmatter with name and description
+3. Write instructions in Markdown
+4. The agent will discover and use it automatically
+
+### Example: Debugging Skill
+
+```markdown title=".codesm/skills/SKILL.md"
+---
+name: debugging
+description: Systematic debugging approach
+triggers:
+  - "bug"
+  - "error"
+  - "fix"
+---
+
+# Debugging Workflow
+
+1. **Reproduce** - Confirm the issue exists
+2. **Isolate** - Find the minimal reproduction
+3. **Investigate** - Use logs, breakpoints, traces
+4. **Fix** - Make the smallest change that fixes it
+5. **Verify** - Confirm fix doesn't break other things
+6. **Document** - Add test to prevent regression
 ```
 
-Install from URL:
+---
 
-```bash frame="none"
-/skills install https://github.com/user/skill-repo
-```
+## Skill Caching
+
+Fetched skills are cached at `~/.cache/codesm/skills/` for fast re-use.
