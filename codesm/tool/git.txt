@@ -1,0 +1,63 @@
+Git operations tool for version control management.
+
+## Actions
+
+### status
+Get current git status including branch name and changed files.
+
+### diff
+Show uncommitted changes with file statistics.
+
+### log
+Show recent commit history (last 10 commits).
+
+### branch
+Create a new branch or list existing branches.
+- `branch_name`: Name of branch to create (optional, lists if omitted)
+
+### checkout
+Switch to a different branch.
+- `branch_name`: Target branch (required)
+
+### commit
+Stage and commit changes. **Requires user permission.**
+- `message`: Commit message (required)
+- `files`: Specific files to stage (optional, stages all if omitted)
+
+### push
+Push commits to remote. **Requires user permission.**
+
+### pull
+Pull latest changes from remote. **Requires user permission.**
+
+### pr
+Create a pull request via GitHub CLI. **Requires user permission.**
+- `pr_title`: PR title (required)
+- `pr_body`: PR description (optional)
+- `pr_base`: Base branch, default "main" (optional)
+
+## Permission Model
+
+Destructive operations (commit, push, pull, pr) require explicit user permission before execution. The user will see a preview of what will be changed and can approve or deny.
+
+## Examples
+
+Check repository status:
+```json
+{"action": "status"}
+```
+
+Commit all changes:
+```json
+{"action": "commit", "message": "Add user authentication feature"}
+```
+
+Create a feature branch:
+```json
+{"action": "branch", "branch_name": "feature/user-auth"}
+```
+
+Create a PR:
+```json
+{"action": "pr", "pr_title": "Add user authentication", "pr_body": "Implements login/logout functionality", "pr_base": "main"}
+```

@@ -1,0 +1,162 @@
+---
+title: Git Integration
+description: Built-in git operations with permission prompts.
+---
+
+codesm includes a dedicated Git tool for version control operations with safety-first permission prompts.
+
+---
+
+## Overview
+
+The `git` tool provides:
+- Status, diff, and log viewing
+- Branch creation and switching
+- Commit with automatic staging
+- Push to remote
+- PR creation via GitHub CLI
+
+**Destructive operations require user permission** before execution.
+
+---
+
+## Available Actions
+
+### Read-Only (No Permission Required)
+
+| Action | Description |
+|--------|-------------|
+| `status` | Show branch name and changed files |
+| `diff` | Show uncommitted changes |
+| `log` | Show recent commit history |
+| `branch` | List existing branches |
+
+### Requires Permission
+
+| Action | Description |
+|--------|-------------|
+| `commit` | Stage and commit changes |
+| `push` | Push commits to remote |
+| `pull` | Pull from remote |
+| `checkout` | Switch branches |
+| `pr` | Create pull request |
+
+---
+
+## Usage Examples
+
+### Check Status
+
+```txt frame="none"
+Check the git status
+```
+
+The agent will call:
+```json
+{"action": "status"}
+```
+
+### Commit Changes
+
+```txt frame="none"
+Commit the changes with message "Add user authentication"
+```
+
+You'll see a permission prompt showing what will be committed.
+
+### Create PR
+
+```txt frame="none"
+Create a PR to merge this feature into main
+```
+
+The agent will:
+1. Show you the PR details
+2. Ask for permission
+3. Create the PR via `gh` CLI
+
+---
+
+## Permission Prompts
+
+When the agent wants to run a destructive git operation, you'll see:
+
+```
+┌─────────────────────────────────────────┐
+│  Allow git commit?                      │
+│                                         │
+│  Commit message: Add user auth          │
+│                                         │
+│  Changes:                               │
+│   src/auth.py | 45 +++++               │
+│   src/user.py | 12 +++                 │
+│                                         │
+│  [Allow Once] [Allow Always] [Deny]     │
+└─────────────────────────────────────────┘
+```
+
+Options:
+- **Allow Once** - Allow this specific operation
+- **Allow Always** - Allow all git operations this session
+- **Deny** - Reject the operation
+
+---
+
+## Configuration
+
+### Auto-Commit (Coming Soon)
+
+Enable automatic commits after file edits:
+
+```json title="codesm.json"
+{
+  "git": {
+    "auto_commit": false,
+    "commit_message_style": "conventional"
+  }
+}
+```
+
+### Skip Permissions (Use with Caution)
+
+```json title="codesm.json"
+{
+  "permissions": {
+    "git": "allow"
+  }
+}
+```
+
+---
+
+## Integration with Bash Tool
+
+The bash tool also respects git permissions. Running `git commit` or `git push` directly via bash will trigger the same permission prompts.
+
+Protected git commands:
+- `commit`, `push`, `merge`, `rebase`
+- `reset`, `checkout`, `stash`
+- `cherry-pick`, `revert`, `tag`
+- `branch -d`, `branch -D`, `clean`
+- Any command with `--force` or `--hard`
+
+---
+
+## GitHub CLI Integration
+
+For PR creation, codesm uses the GitHub CLI (`gh`). Ensure it's installed and authenticated:
+
+```bash
+# Install gh
+brew install gh  # macOS
+sudo apt install gh  # Ubuntu
+
+# Authenticate
+gh auth login
+```
+
+Then the agent can create PRs:
+
+```txt frame="none"
+Create a PR titled "Feature: User Auth" targeting main
+```

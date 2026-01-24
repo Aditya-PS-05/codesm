@@ -10,6 +10,8 @@ from textual.binding import Binding
 COMMANDS = [
     {"cmd": "/init", "desc": "create/update AGENTS.md"},
     {"cmd": "/new", "desc": "create a new session"},
+    {"cmd": "/fork", "desc": "fork session to explore alternative"},
+    {"cmd": "/branches", "desc": "list session branches"},
     {"cmd": "/models", "desc": "list models"},
     {"cmd": "/mode", "desc": "switch mode (smart/rush)"},
     {"cmd": "/rush", "desc": "rush mode - fast & cheap"},

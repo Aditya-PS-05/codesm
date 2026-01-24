@@ -621,8 +621,12 @@ class CodesmApp(App):
             self._set_mode("rush")
         elif cmd == "/smart":
             self._set_mode("smart")
+        elif cmd == "/fork":
+            self._fork_session()
+        elif cmd == "/branches":
+            self._show_branches()
         elif cmd == "/help":
-            self.notify("Commands: /init, /new, /models, /mode, /rush, /smart, /session, /status, /theme, /connect, /help")
+            self.notify("Commands: /init, /new, /fork, /branches, /models, /mode, /rush, /smart, /session, /status, /theme, /connect, /help")
         elif cmd == "/status":
             mode_str = "Rush" if self._mode == "rush" else "Smart"
             self.notify(f"Mode: {mode_str} | Model: {self.model} | Dir: {self.directory}")
@@ -1551,6 +1555,49 @@ class CodesmApp(App):
             messages.remove_children()
         self._switch_to_welcome()
         self.notify("New session started")
+    
+    def _fork_session(self):
+        """Fork current session to explore an alternative path"""
+        if not self.agent or not self.agent.session:
+            self.notify("No active session to fork")
+            return
+        
+        session = self.agent.session
+        forked = session.fork()
+        self.agent.session = forked
+        
+        # Update UI
+        try:
+            sidebar = self.query_one("#context-sidebar", ContextSidebar)
+            sidebar.update_title(forked.title)
+        except Exception:
+            pass
+        
+        self.notify(f"Forked session: {forked.branch_name}")
+    
+    def _show_branches(self):
+        """Show branches of current session"""
+        if not self.agent or not self.agent.session:
+            self.notify("No active session")
+            return
+        
+        session = self.agent.session
+        branches = session.list_branches()
+        
+        if not branches:
+            # Check if this is a branch itself
+            if session.is_branch():
+                parent = session.get_parent()
+                parent_title = parent.title if parent else "Unknown"
+                self.notify(f"This is a branch of: {parent_title}")
+            else:
+                self.notify("No branches for this session")
+            return
+        
+        branch_list = ", ".join(b.get("branch_name", b["id"][:8]) for b in branches[:5])
+        if len(branches) > 5:
+            branch_list += f" (+{len(branches) - 5} more)"
+        self.notify(f"Branches: {branch_list}")
 
     def action_clear(self):
         """Clear the message history display"""

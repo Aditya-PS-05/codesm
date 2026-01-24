@@ -40,12 +40,13 @@ export default defineConfig({
         "troubleshooting",
         {
           label: "Usage",
-          items: ["tui", "cli", "modes", "sessions", "tools-usage"],
+          items: ["tui", "cli", "modes", "sessions", "branching", "tools-usage"],
         },
         {
           label: "Configure",
           items: [
             "tools",
+            "git",
             "rules",
             "agents",
             "models",

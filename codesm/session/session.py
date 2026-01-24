@@ -27,6 +27,10 @@ class Session:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     topics: Optional[dict] = field(default=None, repr=False)  # TopicInfo as dict
+    # Branching support
+    parent_id: Optional[str] = field(default=None)  # ID of parent session
+    branch_point: Optional[int] = field(default=None)  # Message index where branched
+    branch_name: Optional[str] = field(default=None)  # User-friendly branch label
     _title_generated: bool = field(default=False, repr=False)
     _snapshot: Optional["Snapshot"] = field(default=None, repr=False)
     _current_snapshot_hash: Optional[str] = field(default=None, repr=False)
@@ -66,6 +70,9 @@ class Session:
             messages=messages,
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
+            parent_id=data.get("parent_id"),
+            branch_point=data.get("branch_point"),
+            branch_name=data.get("branch_name"),
             _title_generated=has_user_message,
         )
     
@@ -105,14 +112,22 @@ class Session:
     def save(self):
         """Save session to storage"""
         self.updated_at = datetime.now()
-        Storage.write(["session", self.id], {
+        data = {
             "id": self.id,
             "directory": str(self.directory),
             "title": self.title,
             "messages": self.messages,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-        })
+        }
+        # Include branching fields if set
+        if self.parent_id:
+            data["parent_id"] = self.parent_id
+        if self.branch_point is not None:
+            data["branch_point"] = self.branch_point
+        if self.branch_name:
+            data["branch_name"] = self.branch_name
+        Storage.write(["session", self.id], data)
     
     def add_message(self, role: str, content: str | None = None, **kwargs):
         """Add a message to the session, preserving all metadata"""
@@ -208,6 +223,68 @@ class Session:
     def delete(self):
         """Delete this session from storage"""
         Storage.delete(["session", self.id])
+    
+    def fork(self, at_message: Optional[int] = None, branch_name: Optional[str] = None) -> "Session":
+        """Fork this session to explore an alternative path.
+        
+        Args:
+            at_message: Message index to fork from (default: current end)
+            branch_name: Optional label for this branch
+            
+        Returns:
+            New Session that is a child of this one
+        """
+        fork_point = at_message if at_message is not None else len(self.messages)
+        
+        # Create new session ID
+        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        
+        # Copy messages up to fork point
+        forked_messages = self.messages[:fork_point].copy()
+        
+        # Generate branch name if not provided
+        if not branch_name:
+            branch_count = len(self.list_branches()) + 1
+            branch_name = f"Branch {branch_count}"
+        
+        forked = Session(
+            id=session_id,
+            directory=self.directory,
+            title=f"{self.title} ({branch_name})",
+            messages=forked_messages,
+            parent_id=self.id,
+            branch_point=fork_point,
+            branch_name=branch_name,
+            _title_generated=True,  # Preserve parent's title
+        )
+        forked.save()
+        return forked
+    
+    def list_branches(self) -> list[dict]:
+        """List all sessions that were forked from this one."""
+        keys = Storage.list(["session"])
+        branches = []
+        for key in keys:
+            data = Storage.read(key)
+            if data and data.get("parent_id") == self.id:
+                branches.append({
+                    "id": data["id"],
+                    "title": data.get("title", "Branch"),
+                    "branch_name": data.get("branch_name"),
+                    "branch_point": data.get("branch_point"),
+                    "created_at": data.get("created_at"),
+                })
+        return sorted(branches, key=lambda x: x.get("created_at", ""))
+    
+    def get_parent(self) -> Optional["Session"]:
+        """Get the parent session if this is a branch."""
+        if not self.parent_id:
+            return None
+        return Session.load(self.parent_id)
+    
+    def is_branch(self) -> bool:
+        """Check if this session is a branch of another."""
+        return self.parent_id is not None
 
     @classmethod
     def delete_by_id(cls, session_id: str) -> bool:
