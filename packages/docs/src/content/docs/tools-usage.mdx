@@ -117,6 +117,32 @@ Spawn sub-agents for parallel work:
 Implement the API and UI in parallel
 ```
 
+See [Orchestration](/orchestration) for advanced parallel task patterns.
+
+### parallel_tasks
+
+Run multiple subagent tasks concurrently:
+
+```txt frame="none"
+Research the auth system and find all related files at the same time
+```
+
+### orchestrate
+
+Execute staged workflows with dependencies:
+
+```txt frame="none"
+First analyze the codebase, then plan improvements, then implement
+```
+
+### pipeline
+
+Chain steps where each receives the previous output:
+
+```txt frame="none"
+Find all TODOs, prioritize them, then fix the top one
+```
+
 ### todo
 
 Track items during a session:

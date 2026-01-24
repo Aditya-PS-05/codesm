@@ -1,0 +1,192 @@
+---
+title: Cross-Session Memory
+description: Remember preferences and solutions across sessions.
+---
+
+codesm remembers user preferences, learned facts, and past solutions across sessions.
+
+---
+
+## Overview
+
+Memory allows the agent to:
+- Remember your coding preferences
+- Learn patterns from successful sessions
+- Recall solutions that worked before
+- Build context over time
+
+Memory is stored both globally and per-project.
+
+---
+
+## Memory Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `preference` | User preferences | "Use pytest over unittest" |
+| `fact` | Learned facts | "This project uses PostgreSQL" |
+| `pattern` | Common patterns | "Always add tests for new features" |
+| `solution` | Past solutions | "Fixed auth by adding token refresh" |
+
+---
+
+## CLI Commands
+
+### List Memories
+
+```bash
+# List all memories (global + project)
+codesm memory list
+
+# List project-specific memories only
+codesm memory list --project
+
+# List global memories only
+codesm memory list --global
+```
+
+### Add Memory
+
+```bash
+# Add a preference
+codesm memory add "Use type hints in all Python code" --type preference
+
+# Add a global memory
+codesm memory add "Prefer functional style" --type preference --global
+
+# Add a solution
+codesm memory add "Fixed rate limiting with Redis cache" --type solution
+```
+
+### Delete Memory
+
+```bash
+# Delete by ID (shown in list output)
+codesm memory forget abc12345
+```
+
+### Clear Memories
+
+```bash
+# Clear project memories
+codesm memory clear --project
+
+# Clear global memories
+codesm memory clear --global
+
+# Clear all memories
+codesm memory clear --all
+```
+
+---
+
+## Automatic Memory Extraction
+
+codesm can automatically extract learnings from successful sessions:
+
+1. When a session includes file changes (patches)
+2. When you explicitly ask to remember something
+3. At the end of successful task completions
+
+### Trigger Extraction
+
+In the TUI, use:
+
+```bash frame="none"
+/remember
+```
+
+Or programmatically:
+
+```python
+session = Session.load(session_id)
+memories = await session.extract_memories()
+```
+
+---
+
+## How Memory Works
+
+### Storage
+
+Memories are stored as JSON:
+
+```
+~/.local/share/codesm/
+├── memory/
+│   ├── global/
+│   │   └── items.json          # Global memories
+│   └── project/
+│       └── <project-id>/
+│           └── items.json      # Project-specific memories
+```
+
+### Retrieval
+
+When you start a conversation, codesm:
+
+1. Loads relevant memories (global + project)
+2. Embeds your query using OpenAI embeddings
+3. Finds semantically similar memories
+4. Injects relevant ones into the prompt
+
+### Memory Item Structure
+
+```json
+{
+  "id": "abc12345",
+  "type": "preference",
+  "text": "Use pytest over unittest",
+  "project_id": null,
+  "tags": ["testing", "python"],
+  "created_at": "2024-01-15T10:30:00",
+  "usefulness": 0.8
+}
+```
+
+---
+
+## Best Practices
+
+### What to Remember
+
+✅ Good memories:
+- Coding style preferences
+- Project-specific conventions
+- Solutions to recurring problems
+- Tool preferences
+
+❌ Avoid storing:
+- Secrets or API keys
+- Temporary workarounds
+- Context-specific decisions
+
+### Memory Hygiene
+
+- Periodically review memories with `codesm memory list`
+- Remove outdated memories with `codesm memory forget`
+- Keep memories concise and actionable
+
+---
+
+## Configuration
+
+Memory can be configured in `~/.config/codesm/config.json`:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "auto_extract": false,
+    "max_items_per_project": 500,
+    "max_global_items": 200
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable/disable memory system |
+| `auto_extract` | `false` | Auto-extract memories from sessions |
+| `max_items_per_project` | `500` | Max memories per project |
+| `max_global_items` | `200` | Max global memories |

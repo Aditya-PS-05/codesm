@@ -165,3 +165,53 @@ codesm --completion fish | source
 ```
 
 Add to your shell config file to persist.
+
+---
+
+## Memory Commands
+
+Manage cross-session memory:
+
+```bash
+# List all memories
+codesm memory list
+
+# List project memories only
+codesm memory list --project
+
+# Add a memory
+codesm memory add "Use pytest for testing" --type preference
+
+# Delete a memory
+codesm memory forget <memory-id>
+
+# Clear all memories
+codesm memory clear --all
+```
+
+See [Memory](/memory) for details.
+
+---
+
+## Index Commands
+
+Manage codebase indexing:
+
+```bash
+# Build index for current directory
+codesm index build
+
+# Force rebuild
+codesm index build --force
+
+# Check index status
+codesm index status
+
+# Search the index
+codesm index search "authentication handler"
+
+# Clear the index
+codesm index clear
+```
+
+See [Indexing](/indexing) for details.

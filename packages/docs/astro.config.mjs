@@ -40,7 +40,7 @@ export default defineConfig({
         "troubleshooting",
         {
           label: "Usage",
-          items: ["tui", "cli", "sessions", "tools-usage"],
+          items: ["tui", "cli", "modes", "sessions", "tools-usage"],
         },
         {
           label: "Configure",
@@ -58,7 +58,7 @@ export default defineConfig({
         },
         {
           label: "Advanced",
-          items: ["architecture", "custom-tools", "api"],
+          items: ["architecture", "orchestration", "memory", "indexing", "custom-tools", "api"],
         },
       ],
       components: {

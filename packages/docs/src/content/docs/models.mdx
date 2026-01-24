@@ -3,7 +3,7 @@ title: Models
 description: Configure and switch between AI models.
 ---
 
-codesm supports multiple AI models from various providers.
+codesm uses a multi-model architecture with task-specialized models for optimal performance and cost.
 
 ---
 
@@ -178,6 +178,77 @@ Automatically select models based on task:
     "default": "claude-sonnet-4-20250514",
     "quick_tasks": "claude-3-5-haiku-20241022",
     "complex_tasks": "claude-sonnet-4-20250514"
+  }
+}
+```
+
+---
+
+## Multi-Model Architecture
+
+codesm uses specialized models across three tiers:
+
+### Tier 1: Agent Modes
+
+Primary interaction models controlled via [Agent Modes](/modes):
+
+| Mode | Anthropic | OpenAI | Use Case |
+|------|-----------|--------|----------|
+| Smart | Claude Sonnet 4 | GPT-4o | Complex reasoning |
+| Rush | Claude Haiku 3.5 | GPT-4o-mini | Fast, cheap tasks |
+
+### Tier 2: Feature Models
+
+Low-latency models for UI/UX features:
+
+| Feature | Model | Provider | Purpose |
+|---------|-------|----------|---------|
+| Tab Completion | Custom fine-tuned | - | Autocomplete suggestions |
+| Code Review | Gemini 2.5 Pro | OpenRouter | Bug detection, review |
+| Thread Titling | Claude 3.5 Haiku | OpenRouter | Fast title generation |
+| Media Analysis | Gemini 2.0 Flash | OpenRouter | Image/PDF analysis |
+
+### Tier 3: Specialized Subagents
+
+Background processing with task-optimized models:
+
+| Subagent | Model | Purpose |
+|----------|-------|---------|
+| Oracle | GPT-5 / o1 | Complex reasoning, debugging |
+| Finder | Gemini 2.5 Flash | High-speed code search |
+| Librarian | Claude Sonnet 4 | Multi-repo research |
+| Coder | Claude Sonnet 4 | Code generation |
+| Reviewer | Claude Sonnet 4 | Code review |
+
+See [Orchestration](/orchestration) for details on using subagents.
+
+---
+
+## Task Router Configuration
+
+Configure how tasks are routed to models:
+
+```json title="codesm.json"
+{
+  "task_router": {
+    "enabled": true,
+    "rules": [
+      {
+        "pattern": "find|search|locate",
+        "subagent": "finder",
+        "model": "gemini-2.5-flash"
+      },
+      {
+        "pattern": "review|analyze|audit",
+        "subagent": "reviewer",
+        "model": "claude-sonnet-4-20250514"
+      },
+      {
+        "pattern": "implement|create|build",
+        "subagent": "coder",
+        "model": "claude-sonnet-4-20250514"
+      }
+    ]
   }
 }
 ```

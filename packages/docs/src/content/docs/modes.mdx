@@ -1,0 +1,183 @@
+---
+title: Agent Modes
+description: Smart and Rush modes for different task types.
+---
+
+codesm supports two agent modes optimized for different task types.
+
+---
+
+## Overview
+
+| Mode | Best For | Cost | Speed |
+|------|----------|------|-------|
+| **Smart** | Complex tasks, debugging, architecture | Higher | Standard |
+| **Rush** | Simple edits, quick fixes, small features | **67% cheaper** | **50% faster** |
+
+---
+
+## Smart Mode (Default)
+
+Smart mode uses powerful models for complex reasoning:
+
+- **Anthropic**: Claude Sonnet 4
+- **OpenAI**: GPT-4o
+- **OpenRouter**: Claude Sonnet 4 / GPT-4o
+
+### Best For
+
+- Complex multi-file refactoring
+- Architecture decisions
+- Debugging difficult issues
+- Understanding unfamiliar codebases
+- Writing comprehensive tests
+
+---
+
+## Rush Mode
+
+Rush mode uses fast, efficient models:
+
+- **Anthropic**: Claude Haiku 3.5
+- **OpenAI**: GPT-4o-mini
+- **OpenRouter**: Claude Haiku 3.5 / GPT-4o-mini
+
+### Best For
+
+- Quick typo fixes
+- Simple feature additions
+- Straightforward file edits
+- Well-defined tasks with clear instructions
+- Rapid iteration cycles
+
+---
+
+## Switching Modes
+
+### Keyboard
+
+Press **Tab** to toggle between modes.
+
+The current mode is shown in the status bar.
+
+### Commands
+
+```bash frame="none"
+/rush
+```
+
+```bash frame="none"
+/smart
+```
+
+### Mode Selector
+
+```bash frame="none"
+/mode
+```
+
+Opens a dialog to select the mode.
+
+---
+
+## Configuration
+
+### Default Mode
+
+Set the default mode in your config:
+
+```json title="codesm.json"
+{
+  "mode": "smart"
+}
+```
+
+Options: `smart`, `rush`
+
+### Custom Models Per Mode
+
+Override the models used for each mode:
+
+```json title="codesm.json"
+{
+  "modes": {
+    "smart": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514"
+    },
+    "rush": {
+      "provider": "anthropic",
+      "model": "claude-3-5-haiku-20241022"
+    }
+  }
+}
+```
+
+---
+
+## Cost Comparison
+
+Example costs for a 10,000 token conversation:
+
+| Mode | Model | Input Cost | Output Cost | Total |
+|------|-------|------------|-------------|-------|
+| Smart | Claude Sonnet 4 | $0.03 | $0.15 | ~$0.18 |
+| Rush | Claude Haiku 3.5 | $0.008 | $0.04 | ~$0.05 |
+
+Rush mode is approximately **67% cheaper** for typical tasks.
+
+---
+
+## When to Use Each Mode
+
+### Use Smart Mode When
+
+- You need deep reasoning
+- The task is ambiguous or complex
+- You're debugging a subtle bug
+- You want thorough code review
+- The context requires understanding multiple files
+
+### Use Rush Mode When
+
+- The task is straightforward
+- You have clear, specific instructions
+- Speed matters more than depth
+- You're making many small changes
+- Cost is a concern
+
+---
+
+## Tips
+
+1. **Start with Rush** for simple tasks - switch to Smart if needed
+2. **Use Smart for planning** - then Rush for execution
+3. **Rush for iteration** - when making incremental changes
+4. **Smart for debugging** - when you need deeper analysis
+
+---
+
+## Subagent Mode Inheritance
+
+Subagents spawned via the `task` tool inherit the parent's mode by default:
+
+```json
+{
+  "subagent": {
+    "inherit_mode": true
+  }
+}
+```
+
+Override for specific subagent types:
+
+```json title="codesm.json"
+{
+  "subagent_modes": {
+    "finder": "rush",
+    "oracle": "smart",
+    "coder": "smart",
+    "researcher": "smart"
+  }
+}
+```

@@ -1,0 +1,263 @@
+---
+title: Codebase Indexing
+description: Pre-index repositories for instant semantic search.
+---
+
+codesm pre-indexes your codebase for instant semantic code search.
+
+---
+
+## Overview
+
+Codebase indexing enables:
+- **Instant semantic search** - Find code by meaning, not just keywords
+- **Background indexing** - Indexes automatically when you start a session
+- **Incremental updates** - Only re-indexes changed files
+- **Persistent cache** - Index survives across sessions
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A[Code Files] --> B[Chunking]
+    B --> C[Embeddings]
+    C --> D[Vector Index]
+    D --> E[Semantic Search]
+```
+
+1. **Scan** - Find all code files in the project
+2. **Chunk** - Extract functions, classes, and logical blocks
+3. **Embed** - Generate embeddings using OpenAI's text-embedding-3-small
+4. **Store** - Persist embeddings for instant retrieval
+5. **Search** - Find relevant code via cosine similarity
+
+---
+
+## CLI Commands
+
+### Build Index
+
+```bash
+# Index current directory
+codesm index build
+
+# Index specific path
+codesm index build /path/to/project
+
+# Force rebuild (ignore cache)
+codesm index build --force
+```
+
+### Check Status
+
+```bash
+codesm index status
+```
+
+Output:
+```
+Index status for /home/user/myproject:
+  Project ID: a1b2c3d4e5f6
+  Files indexed: 142
+  Chunks: 1,847
+  Model: text-embedding-3-small
+  Updated: 2024-01-15T14:30:00
+```
+
+### Search Index
+
+```bash
+# Search for code semantically
+codesm index search "function that validates email"
+
+# Limit results
+codesm index search "error handling" --top 10
+```
+
+### Clear Index
+
+```bash
+codesm index clear
+```
+
+---
+
+## Automatic Indexing
+
+When you create a new session, codesm automatically starts background indexing:
+
+```python
+# This happens automatically in Session.create()
+asyncio.create_task(ProjectIndexer(directory).ensure_index())
+```
+
+The agent can use the index immediately - if it's still building, it falls back to on-demand indexing.
+
+---
+
+## Storage
+
+### Index Location
+
+```
+~/.local/share/codesm/
+├── index/
+│   └── project/
+│       └── <project-id>/
+│           └── meta.json       # Metadata (file states, version)
+
+~/.cache/codesm/
+└── index/
+    └── <project-id>.pkl        # Embeddings (pickle format)
+```
+
+### Metadata Structure
+
+```json
+{
+  "root": "/home/user/myproject",
+  "created_at": "2024-01-15T10:00:00",
+  "updated_at": "2024-01-15T14:30:00",
+  "embedding_model": "text-embedding-3-small",
+  "chunking_version": 1,
+  "file_state": {
+    "/home/user/myproject/src/main.py": {
+      "mtime": 1705312200.0,
+      "size": 4096
+    }
+  }
+}
+```
+
+---
+
+## Incremental Updates
+
+codesm detects file changes via modification time:
+
+1. Compare current `mtime` with stored state
+2. Re-chunk and re-embed only changed files
+3. Remove deleted files from index
+4. Update metadata
+
+### Trigger Update
+
+```python
+indexer = ProjectIndexer(root)
+await indexer.update_incremental()
+```
+
+---
+
+## Supported Languages
+
+The indexer recognizes these file extensions:
+
+| Category | Extensions |
+|----------|------------|
+| Python | `.py` |
+| JavaScript/TypeScript | `.js`, `.ts`, `.jsx`, `.tsx` |
+| Go | `.go` |
+| Rust | `.rs` |
+| Java/Kotlin | `.java`, `.kt` |
+| C/C++ | `.c`, `.cpp`, `.h`, `.hpp` |
+| Ruby | `.rb` |
+| PHP | `.php` |
+| Swift | `.swift` |
+| Scala | `.scala` |
+| Shell | `.sh`, `.bash` |
+
+---
+
+## Chunking Strategy
+
+Code is chunked intelligently:
+
+1. **Function/class detection** - Extract complete definitions
+2. **Context preservation** - Keep enough surrounding code
+3. **Size limits** - Chunks capped at 2000 characters
+4. **Fallback** - Sliding window for unstructured files
+
+### Example Chunk
+
+```python
+# Detected as a single chunk
+def validate_email(email: str) -> bool:
+    """Validate email format."""
+    import re
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return bool(re.match(pattern, email))
+```
+
+---
+
+## Using with CodeSearch Tool
+
+The `codesearch` tool automatically uses the pre-built index:
+
+```bash frame="none"
+/codesearch function that handles authentication
+```
+
+If no index exists, it builds one on-demand. Custom file patterns fall back to legacy indexing:
+
+```bash frame="none"
+/codesearch validate input --pattern "*.py"
+```
+
+---
+
+## Background Watcher
+
+For long-running sessions, enable the index watcher:
+
+```python
+from codesm.index import IndexWatcher
+
+watcher = IndexWatcher()
+watcher.start(root, interval=300)  # Check every 5 minutes
+```
+
+This keeps the index fresh without manual rebuilds.
+
+---
+
+## Performance Tips
+
+### Large Codebases
+
+For repos with 10,000+ files:
+
+1. Use `.codesmignore` to exclude non-essential directories
+2. Pre-build index before starting work: `codesm index build`
+3. Consider indexing specific subdirectories
+
+### Ignored Directories
+
+These are automatically skipped:
+- `node_modules/`
+- `.venv/`, `venv/`
+- `__pycache__/`
+- `.git/`
+- `dist/`, `build/`, `target/`
+
+---
+
+## Requirements
+
+- **OpenAI API key** - Required for embeddings
+- **numpy** - For vector operations
+
+Set your API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Or configure via:
+
+```bash
+codesm connect openai
+```

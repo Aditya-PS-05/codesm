@@ -1,0 +1,301 @@
+---
+title: Parallel Subagents
+description: Run multiple subagents concurrently for faster task completion.
+---
+
+codesm can spawn multiple subagents in parallel for independent tasks, dramatically reducing completion time.
+
+---
+
+## Overview
+
+Parallel subagents allow you to:
+- Execute independent tasks concurrently
+- Break down complex work into parallelizable units
+- Use specialized agents for different task types
+- Aggregate results automatically
+
+---
+
+## Subagent Types
+
+Each subagent type is optimized for specific tasks:
+
+| Type | Best For | Model | Capabilities |
+|------|----------|-------|--------------|
+| `coder` | Multi-file edits, features | Claude Sonnet | Read, write, edit, bash |
+| `researcher` | Code analysis (read-only) | Claude Sonnet | Read, grep, glob |
+| `reviewer` | Bug detection, security | Claude Sonnet | Read, grep, analysis |
+| `planner` | Implementation plans | Claude Sonnet | Read, analyze |
+| `finder` | Fast code search | Gemini Flash | Grep, glob, read |
+| `oracle` | Deep reasoning | o1 / GPT-5 | Analysis, planning |
+| `librarian` | Multi-repo research | Claude Sonnet | Read, web, search |
+| `auto` | Let router decide | Varies | Task-dependent |
+
+---
+
+## parallel_tasks Tool
+
+Run up to 10 tasks concurrently:
+
+```python
+{
+    "tasks": [
+        {
+            "subagent_type": "researcher",
+            "prompt": "Find all API endpoints in the codebase",
+            "description": "Find API endpoints"
+        },
+        {
+            "subagent_type": "researcher",
+            "prompt": "Analyze the authentication flow",
+            "description": "Analyze auth flow"
+        },
+        {
+            "subagent_type": "finder",
+            "prompt": "Find all test files",
+            "description": "Find test files"
+        }
+    ],
+    "fail_fast": false
+}
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `tasks` | array | required | List of task objects |
+| `fail_fast` | bool | `false` | Cancel remaining on first failure |
+| `max_concurrent` | int | `10` | Maximum concurrent tasks |
+
+### Task Object
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subagent_type` | string | yes | Type of subagent to spawn |
+| `prompt` | string | yes | Task instructions |
+| `description` | string | yes | Short task label (for progress) |
+| `model` | string | no | Override default model |
+
+---
+
+## orchestrate Tool
+
+For complex multi-stage workflows with dependencies:
+
+```python
+{
+    "stages": [
+        [  # Stage 1: Research (parallel)
+            {"subagent_type": "researcher", "prompt": "Analyze current auth system", "description": "Research auth"},
+            {"subagent_type": "finder", "prompt": "Find all auth-related files", "description": "Find auth files"}
+        ],
+        [  # Stage 2: Planning (after research completes)
+            {"subagent_type": "planner", "prompt": "Plan auth improvements based on research", "description": "Plan improvements"}
+        ],
+        [  # Stage 3: Implementation (after planning)
+            {"subagent_type": "coder", "prompt": "Implement planned auth improvements", "description": "Implement changes"},
+            {"subagent_type": "coder", "prompt": "Add tests for new auth code", "description": "Add tests"}
+        ]
+    ],
+    "fail_fast": true
+}
+```
+
+### How Stages Work
+
+1. All tasks within a stage run **in parallel**
+2. Stages run **sequentially** - Stage 2 waits for Stage 1 to complete
+3. Results from previous stages are available to subsequent stages
+4. If `fail_fast` is true, any failure stops the entire orchestration
+
+---
+
+## pipeline Tool
+
+For sequential workflows where each step receives the previous output:
+
+```python
+{
+    "steps": [
+        {
+            "subagent_type": "researcher",
+            "prompt_template": "Find all TODO comments in the codebase",
+            "description": "Find TODOs"
+        },
+        {
+            "subagent_type": "planner",
+            "prompt_template": "Prioritize these TODOs: {previous_result}",
+            "description": "Prioritize"
+        },
+        {
+            "subagent_type": "coder",
+            "prompt_template": "Fix the top priority TODO: {previous_result}",
+            "description": "Fix top TODO"
+        }
+    ],
+    "initial_context": ""
+}
+```
+
+### Template Variables
+
+- `{previous_result}` - Output from the previous step
+- `{initial_context}` - The initial context provided
+
+---
+
+## Auto-Routing
+
+Use `subagent_type: "auto"` to let the router pick the best agent:
+
+```python
+{
+    "tasks": [
+        {
+            "subagent_type": "auto",
+            "prompt": "Find and fix the bug in the login flow",
+            "description": "Fix login bug"
+        }
+    ]
+}
+```
+
+The router analyzes the prompt and selects based on:
+- Keywords (find, analyze, implement, review)
+- Task complexity
+- Required capabilities
+
+---
+
+## Error Handling
+
+### Fail-Fast Mode
+
+```python
+{
+    "tasks": [...],
+    "fail_fast": true
+}
+```
+
+When enabled:
+- First failure cancels all pending tasks
+- Already-running tasks continue to completion
+- Results include partial completions
+
+### Default (Resilient) Mode
+
+```python
+{
+    "tasks": [...],
+    "fail_fast": false
+}
+```
+
+- All tasks run to completion
+- Failures are reported individually
+- Successful results are still collected
+
+---
+
+## Result Format
+
+Results are aggregated with metadata:
+
+```json
+{
+    "completed": 3,
+    "failed": 0,
+    "total": 3,
+    "duration_ms": 4523,
+    "results": [
+        {
+            "description": "Find API endpoints",
+            "status": "success",
+            "duration_ms": 2341,
+            "result": "Found 12 API endpoints..."
+        },
+        {
+            "description": "Analyze auth flow",
+            "status": "success",
+            "duration_ms": 3102,
+            "result": "The auth flow uses JWT..."
+        }
+    ]
+}
+```
+
+---
+
+## Programmatic Usage
+
+```python
+from codesm.agent.orchestrator import spawn_parallel_subagents, SubAgentOrchestrator
+
+# Simple parallel execution
+results = await spawn_parallel_subagents(
+    tasks=[
+        ("researcher", "Find all database queries", "Find DB queries"),
+        ("coder", "Add input validation to user.py", "Add validation"),
+    ],
+    directory=Path("."),
+    parent_tools=tool_registry,
+    max_concurrent=5,
+)
+
+for task in results:
+    print(f"{task.description}: {task.status}")
+
+# Advanced: Staged orchestration
+orchestrator = SubAgentOrchestrator(directory=Path("."), parent_tools=registry)
+plan = OrchestrationPlan.staged([
+    [orchestrator.create_task("researcher", "Research phase", "Research")],
+    [orchestrator.create_task("coder", "Implement", "Implement")],
+])
+await orchestrator.execute_plan(plan)
+```
+
+---
+
+## Configuration
+
+### Concurrency Limits
+
+```json title="codesm.json"
+{
+  "orchestration": {
+    "max_concurrent": 5,
+    "timeout_per_task": 120
+  }
+}
+```
+
+### Model Overrides
+
+```json title="codesm.json"
+{
+  "subagents": {
+    "finder": {
+      "model": "gemini-2.0-flash",
+      "provider": "openrouter"
+    },
+    "coder": {
+      "model": "claude-sonnet-4-20250514",
+      "provider": "anthropic"
+    }
+  }
+}
+```
+
+---
+
+## Best Practices
+
+1. **Use `finder` for search** - It's faster and cheaper than `researcher`
+2. **Batch related tasks** - Group tasks that can run independently
+3. **Staged for dependencies** - Use `orchestrate` when steps depend on each other
+4. **Pipeline for chains** - Use `pipeline` when output flows to next step
+5. **Set reasonable timeouts** - Prevent runaway tasks
+6. **Monitor costs** - Parallel execution uses more tokens simultaneously
