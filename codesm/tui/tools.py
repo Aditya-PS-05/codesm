@@ -1,8 +1,15 @@
-"""Tool display widgets - Terminal-inspired style with tree connectors"""
+"""Tool display widgets - Terminal-inspired style with tree connectors
 
-from textual.widgets import Static
+Implements Amp-style hierarchical tree display with:
+- Collapsible sections using └─── and ├─── connectors
+- Grouped tool calls under action headers
+- Minimal, compact visual hierarchy
+"""
+
+from textual.widgets import Static, Collapsible
 from textual.containers import Vertical
 from textual.reactive import reactive
+from textual.message import Message
 from rich.text import Text
 import re
 
@@ -395,6 +402,489 @@ class ToolGroupWidget(Static):
             name, args, _, _ = self._tool_calls[index]
             self._tool_calls[index] = (name, args, False, result_summary)
             self.refresh()
+
+
+# =============================================================================
+# Amp-style Collapsible Tree Widgets
+# =============================================================================
+
+class TreeNode(Static):
+    """A single node in the tree hierarchy with connector styling.
+    
+    Renders as:
+        ├── ✓ Node content
+    or  └── ✓ Node content (if last)
+    """
+    
+    DEFAULT_CSS = """
+    TreeNode {
+        height: auto;
+        padding: 0 0 0 2;
+        margin: 0;
+    }
+    """
+    
+    def __init__(
+        self,
+        content: str | Text,
+        *,
+        icon: str = "✓",
+        icon_style: str = "",
+        is_last: bool = False,
+        indent_level: int = 0,
+        pending: bool = False,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self._content = content
+        self._icon = icon
+        self._icon_style = icon_style or (f"bold {GREEN}" if icon == "✓" else "dim")
+        self._is_last = is_last
+        self._indent_level = indent_level
+        self._pending = pending
+    
+    def render(self) -> Text:
+        text = Text()
+        
+        # Add indentation for nested levels
+        for _ in range(self._indent_level):
+            text.append("    ", style=DIM)
+        
+        # Tree connector
+        connector = "└── " if self._is_last else "├── "
+        text.append(connector, style=DIM)
+        
+        # Status icon
+        if self._pending:
+            text.append("~ ", style="dim")
+        else:
+            text.append(f"{self._icon} ", style=self._icon_style)
+        
+        # Content (can be Text or str)
+        if isinstance(self._content, Text):
+            text.append_text(self._content)
+        else:
+            text.append(self._content)
+        
+        return text
+    
+    def mark_complete(self, icon: str = "✓", icon_style: str = ""):
+        """Mark this node as complete."""
+        self._pending = False
+        self._icon = icon
+        self._icon_style = icon_style or f"bold {GREEN}"
+        self.refresh()
+    
+    def set_last(self, is_last: bool):
+        """Update whether this is the last node."""
+        self._is_last = is_last
+        self.refresh()
+
+
+class CollapsibleTreeGroup(Static):
+    """A collapsible group of tree nodes - Amp style.
+    
+    Renders as:
+        ✓ Group Title
+        │
+        ├── ✓ Item 1
+        ├── ✓ Item 2
+        └── ✓ Item 3
+    
+    When collapsed:
+        ▸ Group Title (3 items)
+    """
+    
+    DEFAULT_CSS = """
+    CollapsibleTreeGroup {
+        height: auto;
+        padding: 0 2;
+        margin: 0 0 1 0;
+    }
+    
+    CollapsibleTreeGroup.collapsed .tree-children {
+        display: none;
+    }
+    """
+    
+    class Toggled(Message):
+        """Posted when the group is toggled."""
+        def __init__(self, group: "CollapsibleTreeGroup", expanded: bool) -> None:
+            super().__init__()
+            self.group = group
+            self.expanded = expanded
+    
+    expanded = reactive(True)
+    
+    def __init__(
+        self,
+        title: str,
+        *,
+        icon: str = "✓",
+        icon_style: str = "",
+        show_count: bool = True,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self._title = title
+        self._icon = icon
+        self._icon_style = icon_style or f"bold {GREEN}"
+        self._show_count = show_count
+        self._items: list[tuple[str | Text, str, str, bool]] = []  # (content, icon, icon_style, pending)
+        self._pending = True
+    
+    def render(self) -> Text:
+        text = Text()
+        
+        # Header line with expand/collapse indicator
+        if self.expanded:
+            indicator = "▾ " if self._items else ""
+        else:
+            indicator = "▸ "
+        
+        if self._pending:
+            text.append("~ ", style="dim")
+        else:
+            text.append(f"{self._icon} ", style=self._icon_style)
+        
+        text.append(f"{indicator}", style="dim")
+        text.append(self._title, style="bold white")
+        
+        # Show item count when collapsed or always if configured
+        if not self.expanded and self._items:
+            text.append(f" ({len(self._items)} items)", style="dim")
+        
+        if self.expanded and self._items:
+            # Vertical connector line
+            text.append("\n│", style=DIM)
+            
+            # Render each item
+            for i, (content, icon, style, pending) in enumerate(self._items):
+                is_last = (i == len(self._items) - 1)
+                connector = "\n└── " if is_last else "\n├── "
+                text.append(connector, style=DIM)
+                
+                if pending:
+                    text.append("~ ", style="dim")
+                else:
+                    text.append(f"{icon} ", style=style or f"bold {GREEN}")
+                
+                if isinstance(content, Text):
+                    text.append_text(content)
+                else:
+                    text.append(content)
+        
+        return text
+    
+    def add_item(
+        self,
+        content: str | Text,
+        *,
+        icon: str = "✓",
+        icon_style: str = "",
+        pending: bool = False
+    ):
+        """Add an item to the group."""
+        self._items.append((content, icon, icon_style or f"bold {GREEN}", pending))
+        self.refresh()
+        return len(self._items) - 1
+    
+    def mark_item_complete(self, index: int, icon: str = "✓", icon_style: str = ""):
+        """Mark a specific item as complete."""
+        if 0 <= index < len(self._items):
+            content, _, _, _ = self._items[index]
+            self._items[index] = (content, icon, icon_style or f"bold {GREEN}", False)
+            self.refresh()
+    
+    def mark_group_complete(self, icon: str = "✓", icon_style: str = ""):
+        """Mark the entire group as complete."""
+        self._pending = False
+        self._icon = icon
+        self._icon_style = icon_style or f"bold {GREEN}"
+        self.refresh()
+    
+    def toggle(self):
+        """Toggle expanded/collapsed state."""
+        self.expanded = not self.expanded
+        self.post_message(self.Toggled(self, self.expanded))
+        self.refresh()
+    
+    def on_click(self):
+        """Handle click to toggle."""
+        self.toggle()
+
+
+class ToolTreeWidget(Static):
+    """Amp-style tool call display with tree hierarchy.
+    
+    Groups related tool calls and shows them in a collapsible tree:
+    
+        ✓ Search
+        │
+        ├── ✓ Grep "pattern" in src/
+        ├── ✓ Glob "*.py"
+        └── ✓ Read file.py
+    """
+    
+    DEFAULT_CSS = """
+    ToolTreeWidget {
+        height: auto;
+        padding: 0 2;
+        margin: 0;
+    }
+    """
+    
+    def __init__(
+        self,
+        category: str,
+        *,
+        collapsed: bool = False,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.category = category
+        self._collapsed = collapsed
+        self._tools: list[tuple[str, dict, bool, str]] = []  # (name, args, pending, summary)
+        self._pending = True
+    
+    def render(self) -> Text:
+        text = Text()
+        
+        # Header with status
+        if self._collapsed:
+            text.append("▸ ", style="dim")
+        elif self._tools:
+            text.append("▾ ", style="dim")
+        
+        if self._pending and any(t[2] for t in self._tools):
+            text.append("~ ", style="dim")
+        else:
+            text.append("✓ ", style=f"bold {GREEN}")
+        
+        text.append(self.category.title(), style="bold white")
+        
+        if self._collapsed:
+            completed = sum(1 for t in self._tools if not t[2])
+            text.append(f" ({completed}/{len(self._tools)})", style="dim")
+            return text
+        
+        if not self._tools:
+            return text
+        
+        # Vertical connector
+        text.append("\n│", style=DIM)
+        
+        # Render each tool
+        for i, (name, args, pending, summary) in enumerate(self._tools):
+            is_last = (i == len(self._tools) - 1)
+            connector = "\n└── " if is_last else "\n├── "
+            text.append(connector, style=DIM)
+            
+            if pending:
+                text.append("~ ", style="dim")
+            else:
+                text.append("✓ ", style=f"bold {GREEN}")
+            
+            text.append_text(self._format_tool(name, args, pending))
+            
+            if summary and not pending:
+                text.append(f" {summary}", style="dim")
+        
+        return text
+    
+    def _format_tool(self, name: str, args: dict, pending: bool) -> Text:
+        """Format a tool call with styled output."""
+        text = Text()
+        dim = pending
+        base_style = "dim" if dim else ""
+        
+        if name == "read":
+            path = args.get("path", args.get("file_path", ""))
+            text.append("Read ", style=base_style)
+            text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+        elif name == "write":
+            path = args.get("path", "")
+            text.append("Write ", style=base_style)
+            text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+        elif name == "edit":
+            path = args.get("path", "")
+            text.append("Edit ", style=base_style)
+            text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+        elif name == "grep":
+            pattern = args.get("pattern", "")
+            path = args.get("path", "")
+            text.append("Grep ", style=base_style)
+            text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
+            if path:
+                text.append(" in ", style="dim")
+                text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
+        elif name == "glob":
+            pattern = args.get("pattern", args.get("file_pattern", ""))
+            text.append("Glob ", style=base_style)
+            text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
+        elif name == "bash":
+            cmd = args.get("command", "")[:50]
+            desc = args.get("description", "")
+            if desc:
+                text.append(desc, style=base_style)
+            else:
+                text.append("$ ", style=base_style)
+                text.append(cmd, style=f"{YELLOW}" if not dim else "dim")
+        elif name == "codesearch":
+            query = args.get("query", "")[:40]
+            text.append("Search ", style=base_style)
+            text.append(f'"{query}"', style=f"bold {YELLOW}" if not dim else "dim")
+        elif name == "websearch":
+            query = args.get("query", "")[:40]
+            text.append("Web ", style=base_style)
+            text.append(f'"{query}"', style=f"bold {YELLOW}" if not dim else "dim")
+        else:
+            text.append(f"{name}", style=base_style)
+        
+        return text
+    
+    def _short_path(self, path: str) -> str:
+        """Shorten path for display."""
+        if not path:
+            return ""
+        parts = path.split("/")
+        if len(parts) > 3:
+            return f".../{'/'.join(parts[-2:])}"
+        return path
+    
+    def add_tool(self, name: str, args: dict, pending: bool = True) -> int:
+        """Add a tool to the group. Returns the index."""
+        self._tools.append((name, args, pending, ""))
+        self.refresh()
+        return len(self._tools) - 1
+    
+    def mark_tool_complete(self, index: int, summary: str = ""):
+        """Mark a tool as complete."""
+        if 0 <= index < len(self._tools):
+            name, args, _, _ = self._tools[index]
+            self._tools[index] = (name, args, False, summary)
+            # Check if all tools are complete
+            if not any(t[2] for t in self._tools):
+                self._pending = False
+            self.refresh()
+    
+    def toggle_collapse(self):
+        """Toggle collapsed state."""
+        self._collapsed = not self._collapsed
+        self.refresh()
+    
+    def on_click(self):
+        """Handle click to toggle collapse."""
+        self.toggle_collapse()
+
+
+class ThinkingTreeWidget(Static):
+    """Amp-style thinking indicator with collapsible content.
+    
+    Renders as:
+        ▾ Thinking...
+        │
+        └── TL;DR: Summary of what was analyzed
+    
+    Or when collapsed:
+        ▸ Thinking (collapsed)
+    """
+    
+    DEFAULT_CSS = """
+    ThinkingTreeWidget {
+        height: auto;
+        padding: 0 2;
+        margin: 0 0 1 0;
+    }
+    """
+    
+    SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    
+    def __init__(self, message: str = "Thinking", **kwargs):
+        super().__init__(**kwargs)
+        self._message = message
+        self._frame = 0
+        self._complete = False
+        self._collapsed = False
+        self._summary: str | None = None
+        self._sub_items: list[str] = []
+    
+    def render(self) -> Text:
+        text = Text()
+        
+        if self._collapsed and self._complete:
+            text.append("▸ ", style="dim")
+            text.append("✓ ", style=f"bold {GREEN}")
+            text.append(self._message, style="bold white")
+            if self._summary:
+                text.append(f" — {self._summary[:50]}...", style="dim")
+            return text
+        
+        # Expand/collapse indicator
+        if self._sub_items or self._summary:
+            text.append("▾ ", style="dim")
+        
+        # Status icon
+        if self._complete:
+            text.append("✓ ", style=f"bold {GREEN}")
+        else:
+            spinner = self.SPINNER[self._frame % len(self.SPINNER)]
+            text.append(f"{spinner} ", style=f"bold {CYAN}")
+        
+        text.append(self._message, style="bold white" if self._complete else "")
+        
+        # Show summary/sub-items if expanded
+        if (self._summary or self._sub_items) and not self._collapsed:
+            text.append("\n│", style=DIM)
+            
+            if self._summary:
+                text.append("\n└── ", style=DIM)
+                text.append("TL;DR: ", style=f"bold {LIGHT_BLUE}")
+                text.append(self._summary, style="")
+            
+            for i, item in enumerate(self._sub_items):
+                is_last = (i == len(self._sub_items) - 1) and not self._summary
+                connector = "\n└── " if is_last else "\n├── "
+                text.append(connector, style=DIM)
+                text.append(item, style="dim")
+        
+        return text
+    
+    def next_frame(self):
+        """Advance spinner animation."""
+        if not self._complete:
+            self._frame += 1
+            self.refresh()
+    
+    def set_message(self, message: str):
+        """Update the thinking message."""
+        self._message = message
+        self.refresh()
+    
+    def add_sub_item(self, item: str):
+        """Add a sub-item to show progress."""
+        self._sub_items.append(item)
+        self.refresh()
+    
+    def complete(self, summary: str | None = None):
+        """Mark thinking as complete with optional summary."""
+        self._complete = True
+        self._summary = summary
+        self.refresh()
+    
+    def toggle_collapse(self):
+        """Toggle collapsed state."""
+        self._collapsed = not self._collapsed
+        self.refresh()
+    
+    def on_click(self):
+        """Handle click to toggle collapse."""
+        if self._complete:
+            self.toggle_collapse()
+
+
+# Additional color constant for headers
+LIGHT_BLUE = "#8aadf4"
 
 
 class TodoItemWidget(Static):

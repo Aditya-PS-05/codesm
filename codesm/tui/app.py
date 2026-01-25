@@ -20,6 +20,7 @@ from .chat import ChatMessage, ContextSidebar, PromptInput
 from .tools import (
     ToolCallWidget, ToolResultWidget, ThinkingWidget, TodoListWidget,
     ActionHeaderWidget, TreeConnectorWidget, StreamingTextWidget, CodeReviewWidget,
+    ToolTreeWidget, ThinkingTreeWidget, CollapsibleTreeGroup,
     TOOL_CATEGORIES
 )
 from .autocomplete import AutocompletePopup
@@ -938,10 +939,10 @@ class CodesmApp(App):
             tool_widgets: dict[str, ToolCallWidget] = {}
             tools_used: list[str] = []
             
-            # Track current action group for tree-style display
+            # Track current action group for Amp-style tree display
             current_action: str | None = None
-            action_tool_count: int = 0
-            last_tool_widget: ToolCallWidget | None = None
+            current_tree_widget: ToolTreeWidget | None = None
+            tool_index_map: dict[str, tuple[ToolTreeWidget, int]] = {}  # tool_id -> (tree_widget, index)
             
             # Streaming text widget for live response display
             streaming_widget: StreamingTextWidget | None = None
@@ -1002,24 +1003,22 @@ class CodesmApp(App):
                         # Determine action category for grouping
                         action_category = self._get_tool_category(chunk.name)
                         
-                        # Add action header if starting a new category
+                        # Create new ToolTreeWidget if category changed
                         if action_category != current_action:
-                            # Mark previous last tool as "last" in its group
-                            if last_tool_widget is not None:
-                                last_tool_widget.set_tree_position("last")
-                            
                             current_action = action_category
-                            action_tool_count = 0
                             
-                            # Add action header widget
-                            header = ActionHeaderWidget(action_category)
-                            await messages_container.mount(header)
-                            
-                            # Add tree connector line
-                            connector = TreeConnectorWidget()
-                            await messages_container.mount(connector)
+                            # Create Amp-style grouped tree widget
+                            current_tree_widget = ToolTreeWidget(action_category)
+                            await messages_container.mount(current_tree_widget)
                         
-                        action_tool_count += 1
+                        # Add tool to current tree group
+                        if current_tree_widget is not None:
+                            tool_index = current_tree_widget.add_tool(
+                                chunk.name,
+                                chunk.args if isinstance(chunk.args, dict) else {},
+                                pending=True
+                            )
+                            tool_index_map[chunk.id] = (current_tree_widget, tool_index)
                         
                         # Update thinking message based on tool
                         tool_messages = {
@@ -1037,44 +1036,38 @@ class CodesmApp(App):
                             msg = tool_messages.get(chunk.name, f"Using {chunk.name}")
                             self._thinking_widget.set_message(msg)
                         
-                        # Tree position: first tool gets "first", others get "middle"
-                        # The actual last one will be updated to "last" when we know
-                        tree_position = "middle" if action_tool_count > 1 else "first"
-                        
-                        tool_widget = ToolCallWidget(
-                            tool_name=chunk.name,
-                            args=chunk.args if isinstance(chunk.args, dict) else {},
-                            pending=True,
-                            tree_position=tree_position,
-                        )
-                        tool_widgets[chunk.id] = tool_widget
-                        last_tool_widget = tool_widget
                         if chunk.name not in tools_used:
                             tools_used.append(chunk.name)
-                        await messages_container.mount(tool_widget)
                         chat_container.scroll_end(animate=False)
                     elif chunk.type == "tool_result":
                         logger.debug(f"Tool result for {chunk.name}: {chunk.content[:50] if chunk.content else 'empty'}...")
-                        if chunk.id in tool_widgets:
-                            # Generate result summary for inline display
-                            result_summary = self._get_result_summary(chunk.name, chunk.content)
+                        
+                        # Generate result summary for inline display
+                        result_summary = self._get_result_summary(chunk.name, chunk.content)
+                        
+                        # Update tree widget if using grouped display
+                        if chunk.id in tool_index_map:
+                            tree_widget, tool_idx = tool_index_map[chunk.id]
+                            tree_widget.mark_tool_complete(tool_idx, result_summary)
+                        elif chunk.id in tool_widgets:
+                            # Fallback for legacy individual widgets
                             tool_widgets[chunk.id].mark_completed(result_summary=result_summary)
 
-                            # Only show full result for edit/write/bash/mermaid (not glob/grep)
-                            if chunk.name in ["edit", "write", "bash", "mcp_execute", "mermaid", "diagram"]:
-                                from .chat import styled_markdown
-                                result_msg = Static(styled_markdown(chunk.content))
-                                result_msg.styles.padding = (0, 2, 1, 4)
-                                result_msg.styles.margin = (0, 0, 1, 0)
-                                await messages_container.mount(result_msg)
+                        # Only show full result for edit/write/bash/mermaid (not glob/grep)
+                        if chunk.name in ["edit", "write", "bash", "mcp_execute", "mermaid", "diagram"]:
+                            from .chat import styled_markdown
+                            result_msg = Static(styled_markdown(chunk.content))
+                            result_msg.styles.padding = (0, 2, 1, 4)
+                            result_msg.styles.margin = (0, 0, 1, 0)
+                            await messages_container.mount(result_msg)
+                            chat_container.scroll_end(animate=False)
+                        elif chunk.name == "todo":
+                            # Parse todo list from result and display nicely
+                            todos = self._parse_todo_result(chunk.content)
+                            if todos:
+                                todo_widget = TodoListWidget(todos)
+                                await messages_container.mount(todo_widget)
                                 chat_container.scroll_end(animate=False)
-                            elif chunk.name == "todo":
-                                # Parse todo list from result and display nicely
-                                todos = self._parse_todo_result(chunk.content)
-                                if todos:
-                                    todo_widget = TodoListWidget(todos)
-                                    await messages_container.mount(todo_widget)
-                                    chat_container.scroll_end(animate=False)
                     elif chunk.type == "handoff":
                         # Handle handoff to new session
                         logger.info(f"Handoff triggered to session: {chunk.new_session_id}")
@@ -1083,10 +1076,6 @@ class CodesmApp(App):
                     response_text += str(chunk)
 
             duration = time.time() - start_time
-            
-            # Mark the final tool widget as "last" in its group
-            if last_tool_widget is not None:
-                last_tool_widget.set_tree_position("last")
 
             # Stop cursor blink timer
             if cursor_timer:
