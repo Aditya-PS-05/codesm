@@ -100,40 +100,31 @@ class BashTool(Tool):
                     pass
                 return f"Permission denied: {e.message}\n\nThe user rejected this command. Do not retry without asking the user first."
         
-        # Try Rust core first
         exit_code = None
         output = ""
         try:
-            from codesm_core import execute_command
-            stdout, stderr, exit_code = execute_command(command, str(cwd), timeout)
-            output = stdout + stderr
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout,
+            )
+            
+            output = stdout.decode() + stderr.decode()
+            exit_code = proc.returncode
             if exit_code != 0:
                 output += f"\n\nExit code: {exit_code}"
-        except ImportError:
-            # Fallback to asyncio
-            try:
-                proc = await asyncio.create_subprocess_shell(
-                    command,
-                    cwd=cwd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=timeout,
-                )
-                
-                output = stdout.decode() + stderr.decode()
-                exit_code = proc.returncode
-                if exit_code != 0:
-                    output += f"\n\nExit code: {exit_code}"
-            except asyncio.TimeoutError:
-                output = f"Error: Command timed out after {timeout}s"
-                exit_code = -1
-            except Exception as e:
-                output = f"Error executing command: {e}"
-                exit_code = -1
+        except asyncio.TimeoutError:
+            output = f"Error: Command timed out after {timeout}s"
+            exit_code = -1
+        except Exception as e:
+            output = f"Error executing command: {e}"
+            exit_code = -1
         
         # Audit the bash execution
         try:

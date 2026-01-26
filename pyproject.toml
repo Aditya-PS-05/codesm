@@ -1,7 +1,7 @@
 [project]
 name = "codesm"
 version = "0.1.0"
-description = "AI coding agent with Python + Rust"
+description = "AI coding agent"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -21,7 +21,6 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
-    "maturin>=1.7.0",
 ]
 
 [project.scripts]
@@ -37,7 +36,3 @@ packages = ["codesm"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-
-[tool.maturin]
-python-source = "."
-module-name = "codesm_core"

@@ -50,25 +50,6 @@ class GlobTool(Tool):
         root = Path(args.get("path") or context.get("cwd", "."))
         limit = args.get("limit", 100)
         
-        # Try Rust core first
-        try:
-            from codesm_core import list_files
-            files = list_files(str(root))
-            # Filter by glob pattern and exclude unwanted dirs
-            import fnmatch
-            matches = [
-                f for f in files 
-                if fnmatch.fnmatch(f, pattern) and not self._should_exclude(Path(f))
-            ][:limit]
-            if not matches:
-                return "No files found"
-            # Format as clickable links
-            links = [file_link_with_path(f) for f in matches]
-            return "\n".join(links)
-        except ImportError:
-            pass
-        
-        # Fallback to Python
         try:
             matches = [
                 m for m in root.glob(pattern) 
