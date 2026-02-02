@@ -308,18 +308,18 @@ codesm supports two agent modes for different task types:
   - [x] `skill suggest` - Auto-suggest skills based on file context
   - [x] `skill list` - List local project skills
   - [x] `skill load/unload` - Load/unload local skills
-- [ ] **Permissions CLI**:
-  - [ ] `codesm permissions list` - List permission rules
-  - [ ] `codesm permissions test` - Test permissions
-  - [ ] `codesm permissions edit` - Edit permissions
-  - [ ] `codesm permissions add` - Add permission rule
-- [ ] **MCP OAuth**:
-  - [ ] `codesm mcp oauth login` - Register OAuth for MCP server
-  - [ ] `codesm mcp oauth logout` - Remove OAuth for MCP server
-  - [ ] `codesm mcp oauth status` - Show OAuth status
-  - [ ] `codesm mcp add` - Add MCP server configuration
-  - [ ] `codesm mcp remove` - Remove MCP server configuration
-  - [ ] `codesm mcp doctor` - Check MCP server health
+- [x] **Permissions CLI**:
+  - [x] `codesm permissions list` - List permission rules
+  - [x] `codesm permissions test` - Test permissions
+  - [x] `codesm permissions edit` - Edit permissions (add/remove)
+  - [x] `codesm permissions add` - Add permission rule
+- [x] **MCP OAuth**:
+  - [x] `codesm mcp oauth login` - Register OAuth for MCP server
+  - [x] `codesm mcp oauth logout` - Remove OAuth for MCP server
+  - [x] `codesm mcp oauth status` - Show OAuth status
+  - [x] `codesm mcp add` - Add MCP server configuration
+  - [x] `codesm mcp remove` - Remove MCP server configuration
+  - [x] `codesm mcp doctor` - Check MCP server health
 
 #### Execute Mode (from amp)
 - [x] **`-x, --execute`** - Non-interactive execute mode (run prompt, print last message, exit)

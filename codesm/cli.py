@@ -336,6 +336,22 @@ def lsp():
     from codesm.lsp.server import start_lsp
     start_lsp()
 
+# Register subcommands
+try:
+    from codesm.cli_threads import app as threads_app
+    app.add_typer(threads_app, name="threads", help="Manage sessions")
+    
+    from codesm.cli_tools import app as tools_app
+    app.add_typer(tools_app, name="tools", help="Explore tools")
+    
+    from codesm.cli_permissions import app as perms_app
+    app.add_typer(perms_app, name="permissions", help="Manage permissions")
+
+    from codesm.cli_mcp import app as mcp_app
+    app.add_typer(mcp_app, name="mcp", help="Manage MCP servers")
+except ImportError as e:
+    pass
+
 
 @app.command()
 def init(
@@ -390,109 +406,6 @@ def init(
         editor = os.environ.get("EDITOR", "vim")
         os.system(f"{editor} {agents_path}")
 
-
-# MCP subcommands
-mcp_app = typer.Typer(help="MCP (Model Context Protocol) management")
-app.add_typer(mcp_app, name="mcp")
-
-
-@mcp_app.command("list")
-def mcp_list(
-    config: Path = typer.Option(None, "--config", "-c", help="Path to MCP config file"),
-):
-    """List configured MCP servers"""
-    from codesm.mcp import load_mcp_config
-    from rich.console import Console
-    from rich.table import Table
-
-    console = Console()
-    servers = load_mcp_config(config)
-
-    if not servers:
-        console.print("[yellow]No MCP servers configured[/yellow]")
-        console.print("Create a config file with 'codesm mcp init'")
-        return
-
-    table = Table(title="MCP Servers")
-    table.add_column("Name", style="cyan")
-    table.add_column("Command", style="green")
-    table.add_column("Transport")
-
-    for name, server in servers.items():
-        cmd = f"{server.command} {' '.join(server.args)}"
-        if len(cmd) > 50:
-            cmd = cmd[:47] + "..."
-        table.add_row(name, cmd, server.transport)
-
-    console.print(table)
-
-
-@mcp_app.command("test")
-def mcp_test(
-    server_name: str = typer.Argument(None, help="Server name to test (tests all if omitted)"),
-    config: Path = typer.Option(None, "--config", "-c", help="Path to MCP config file"),
-):
-    """Test connection to MCP servers"""
-    import asyncio
-    from codesm.mcp import load_mcp_config, MCPManager
-    from rich.console import Console
-
-    console = Console()
-    servers = load_mcp_config(config)
-
-    if not servers:
-        console.print("[red]No MCP servers configured[/red]")
-        return
-
-    async def test_servers():
-        manager = MCPManager()
-        
-        for name, server_config in servers.items():
-            if server_name and name != server_name:
-                continue
-            manager.add_server(server_config)
-
-        with console.status("Connecting to MCP servers..."):
-            results = await manager.connect_all()
-
-        for name, success in results.items():
-            if success:
-                client = manager._clients.get(name)
-                tools = len(client.tools) if client else 0
-                resources = len(client.resources) if client else 0
-                console.print(f"[green]✓[/green] {name}: {tools} tools, {resources} resources")
-            else:
-                console.print(f"[red]✗[/red] {name}: connection failed")
-
-        # List discovered tools
-        tools = manager.list_all_tools()
-        if tools:
-            console.print(f"\n[bold]Discovered {len(tools)} tools:[/bold]")
-            for tool in tools:
-                console.print(f"  • {tool['server']}/{tool['name']}: {tool['description'][:60]}...")
-
-        await manager.disconnect_all()
-
-    asyncio.run(test_servers())
-
-
-@mcp_app.command("init")
-def mcp_init(
-    path: Path = typer.Argument(Path("mcp-servers.json"), help="Path to create config file"),
-):
-    """Create an example MCP configuration file"""
-    from codesm.mcp import create_example_config
-    from rich.console import Console
-
-    console = Console()
-    
-    if path.exists():
-        if not typer.confirm(f"{path} already exists. Overwrite?"):
-            raise typer.Abort()
-
-    create_example_config(path)
-    console.print(f"[green]Created example MCP config at {path}[/green]")
-    console.print("Edit the file to configure your MCP servers.")
 
 
 def main():
