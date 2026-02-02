@@ -69,7 +69,59 @@ class WebFetchTool(Tool):
             return f"Error fetching {url}: {str(e)}"
 
     def _html_to_text(self, html: str) -> str:
-        """Convert HTML to readable text"""
+        """Convert HTML to readable text using BeautifulSoup"""
+        try:
+            from bs4 import BeautifulSoup, Comment
+            
+            soup = BeautifulSoup(html, "html.parser")
+            
+            # Remove unwanted elements
+            for element in soup(["script", "style", "head", "noscript", "iframe", "svg", "meta", "link"]):
+                element.decompose()
+            
+            # Remove comments
+            for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+                comment.extract()
+                
+            # Convert links to markdown format: [text](href)
+            for a in soup.find_all("a", href=True):
+                text = a.get_text(strip=True)
+                if text:
+                    href = a["href"]
+                    a.replace_with(f"[{text}]({href})")
+            
+            # Convert headings
+            for i in range(1, 7):
+                for h in soup.find_all(f"h{i}"):
+                    text = h.get_text(strip=True)
+                    if text:
+                        h.replace_with(f"\n{'#' * i} {text}\n")
+            
+            # Convert code blocks
+            for pre in soup.find_all("pre"):
+                code = pre.get_text()
+                pre.replace_with(f"\n```\n{code}\n```\n")
+            for code in soup.find_all("code"):
+                text = code.get_text()
+                code.replace_with(f"`{text}`")
+                
+            # Process text and clean up whitespace from the layout
+            text = soup.get_text(separator="\n", strip=True)
+            
+            # Normalize whitespace: max 2 newlines
+            import re
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            
+            return text.strip()
+            
+        except ImportError:
+            # Fallback to regex method if bs4 not available
+            return self._regex_html_to_text(html)
+        except Exception as e:
+            return f"Error parsing HTML: {str(e)}\n\n(Raw content follows)\n\n{html[:1000]}..."
+
+    def _regex_html_to_text(self, html: str) -> str:
+        """Simple regex-based fallback for HTML to text conversion"""
         import re
 
         # Remove script and style elements
@@ -77,44 +129,10 @@ class WebFetchTool(Tool):
         text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL | re.IGNORECASE)
         
-        # Convert common elements to markdown-ish format
-        text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'\n# \1\n', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'\n## \1\n', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'\n### \1\n', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<h[4-6][^>]*>(.*?)</h[4-6]>', r'\n#### \1\n', text, flags=re.DOTALL | re.IGNORECASE)
+        # Remove tags
+        text = re.sub(r'<[^>]+>', ' ', text)
         
-        # Links
-        text = re.sub(r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.DOTALL | re.IGNORECASE)
-        
-        # Lists
-        text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1\n', text, flags=re.DOTALL | re.IGNORECASE)
-        
-        # Paragraphs and breaks
-        text = re.sub(r'<p[^>]*>', '\n\n', text, flags=re.IGNORECASE)
-        text = re.sub(r'</p>', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'<br[^>]*/?>', '\n', text, flags=re.IGNORECASE)
-        
-        # Code blocks
-        text = re.sub(r'<pre[^>]*>(.*?)</pre>', r'\n```\n\1\n```\n', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', text, flags=re.DOTALL | re.IGNORECASE)
-        
-        # Bold and italic
-        text = re.sub(r'<(strong|b)[^>]*>(.*?)</\1>', r'**\2**', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<(em|i)[^>]*>(.*?)</\1>', r'*\2*', text, flags=re.DOTALL | re.IGNORECASE)
-        
-        # Remove remaining HTML tags
-        text = re.sub(r'<[^>]+>', '', text)
-        
-        # Clean up HTML entities
-        text = text.replace('&nbsp;', ' ')
-        text = text.replace('&amp;', '&')
-        text = text.replace('&lt;', '<')
-        text = text.replace('&gt;', '>')
-        text = text.replace('&quot;', '"')
-        text = text.replace('&#39;', "'")
-        
-        # Clean up whitespace
-        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
-        text = re.sub(r' +', ' ', text)
+        # Collapse whitespace
+        text = re.sub(r'\s+', ' ', text)
         
         return text.strip()

@@ -277,9 +277,11 @@ codesm supports two agent modes for different task types:
 - [x] Skill/plugin system
 - [x] Snapshot/undo system
 - [x] Permission system
-- [ ] Web search tool improvements
+- [x] Web Search tool improvements
+  - **DuckDuckGo** (default/free) and **Exa AI** (deep research) support
+  - Enhanced HTML parsing with **BeautifulSoup4** (WebFetch)
 - [ ] Rust core performance
-- [X] Web Search
+- [x] Web Search
 
 #### CLI Features (from amp)
 - [x] **`codesm login`** - Authenticate with API key or OAuth
