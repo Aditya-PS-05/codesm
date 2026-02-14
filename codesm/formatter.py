@@ -143,6 +143,7 @@ class Formatter:
         # Check if command exists
         cmd_name = config["cmd"][0]
         if not shutil.which(cmd_name):
+            logger.debug(f"Formatter not found in PATH: {cmd_name}")
             self._available_formatters[formatter] = False
             return False
         
@@ -159,6 +160,7 @@ class Formatter:
             self._available_formatters[formatter] = available
             return available
         except Exception:
+            logger.debug(f"Formatter check failed for {formatter.value}: {e}")
             self._available_formatters[formatter] = False
             return False
     
@@ -225,7 +227,7 @@ class Formatter:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(file_path.parent),
+                cwd=str(file_path.parent if file_path.parent.exists() else Path.cwd()),
             )
             stdout, stderr = await proc.communicate()
             
