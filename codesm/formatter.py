@@ -193,7 +193,7 @@ class Formatter:
         Returns:
             FormatResult with success status and any errors
         """
-        file_path = Path(file_path)
+        file_path = Path(file_path).resolve()
         
         if not file_path.exists():
             return FormatResult(success=False, formatted=False, error="File not found")
