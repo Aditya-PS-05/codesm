@@ -277,52 +277,54 @@ codesm supports two agent modes for different task types:
 - [x] Skill/plugin system
 - [x] Snapshot/undo system
 - [x] Permission system
-- [ ] Web search tool improvements
+- [x] Web Search tool improvements
+  - **DuckDuckGo** (default/free) and **Exa AI** (deep research) support
+  - Enhanced HTML parsing with **BeautifulSoup4** (WebFetch)
 - [ ] Rust core performance
-- [X] Web Search
+- [x] Web Search
 
 #### CLI Features (from amp)
-- [ ] **`codesm login`** - Authenticate with API key or OAuth
-- [ ] **`codesm logout`** - Remove stored credentials
+- [x] **`codesm login`** - Authenticate with API key or OAuth
+- [x] **`codesm logout`** - Remove stored credentials
 - [ ] **`codesm update`** - Self-update CLI
-- [ ] **Thread Management CLI**:
-  - [ ] `codesm threads list` - List all threads/sessions
-  - [ ] `codesm threads new` - Create new thread
-  - [ ] `codesm threads continue` - Continue existing thread
+- [x] **Thread Management CLI**:
+  - [x] `codesm threads list` - List all threads/sessions
+  - [x] `codesm threads new` - Create new thread
+  - [x] `codesm threads continue` - Continue existing thread
   - [ ] `codesm threads search` - Search threads
-  - [ ] `codesm threads share` - Share a thread (generate URL)
-  - [ ] `codesm threads rename` - Rename a thread
+  - [x] `codesm threads share` - Share a thread (generate URL)
+  - [x] `codesm threads rename` - Rename a thread
   - [ ] `codesm threads archive` - Archive a thread
-  - [ ] `codesm threads delete` - Delete a thread
+  - [x] `codesm threads delete` - Delete a thread
   - [ ] `codesm threads handoff` - Create handoff thread from existing
-  - [ ] `codesm threads markdown` - Export thread as markdown
+  - [x] `codesm threads markdown` - Export thread as markdown (via export command)
   - [ ] `codesm threads replay` - Replay a thread
-- [ ] **Tool Management CLI**:
-  - [ ] `codesm tools list` - List all active tools (including MCP)
-  - [ ] `codesm tools show` - Show tool details
+- [x] **Tool Management CLI**:
+  - [x] `codesm tools list` - List all active tools (including MCP)
+  - [x] `codesm tools show` - Show tool details
   - [ ] `codesm tools make` - Create skeleton tool in toolbox
-  - [ ] `codesm tools use` - Invoke a tool directly from CLI
+  - [x] `codesm tools use` - Invoke a tool directly from CLI
 - [x] **Skill Management CLI**:
   - [x] `skill browse` - Browse skills.sh registry (vercel-labs/agent-skills)
   - [x] `skill fetch <name>` - Fetch skill from skills.sh
   - [x] `skill suggest` - Auto-suggest skills based on file context
   - [x] `skill list` - List local project skills
   - [x] `skill load/unload` - Load/unload local skills
-- [ ] **Permissions CLI**:
-  - [ ] `codesm permissions list` - List permission rules
-  - [ ] `codesm permissions test` - Test permissions
-  - [ ] `codesm permissions edit` - Edit permissions
-  - [ ] `codesm permissions add` - Add permission rule
-- [ ] **MCP OAuth**:
-  - [ ] `codesm mcp oauth login` - Register OAuth for MCP server
-  - [ ] `codesm mcp oauth logout` - Remove OAuth for MCP server
-  - [ ] `codesm mcp oauth status` - Show OAuth status
-  - [ ] `codesm mcp add` - Add MCP server configuration
-  - [ ] `codesm mcp remove` - Remove MCP server configuration
-  - [ ] `codesm mcp doctor` - Check MCP server health
+- [x] **Permissions CLI**:
+  - [x] `codesm permissions list` - List permission rules
+  - [x] `codesm permissions test` - Test permissions
+  - [x] `codesm permissions edit` - Edit permissions (add/remove)
+  - [x] `codesm permissions add` - Add permission rule
+- [x] **MCP OAuth**:
+  - [x] `codesm mcp oauth login` - Register OAuth for MCP server
+  - [x] `codesm mcp oauth logout` - Remove OAuth for MCP server
+  - [x] `codesm mcp oauth status` - Show OAuth status
+  - [x] `codesm mcp add` - Add MCP server configuration
+  - [x] `codesm mcp remove` - Remove MCP server configuration
+  - [x] `codesm mcp doctor` - Check MCP server health
 
 #### Execute Mode (from amp)
-- [ ] **`-x, --execute`** - Non-interactive execute mode (run prompt, print last message, exit)
+- [x] **`-x, --execute`** - Non-interactive execute mode (run prompt, print last message, exit)
 - [ ] **`--stream-json`** - Output in Claude Code-compatible stream JSON format
 - [ ] **`--stream-json-thinking`** - Include thinking blocks in stream JSON
 - [ ] **`--stream-json-input`** - Read JSON Lines from stdin
@@ -465,16 +467,16 @@ The system uses task-specialized models across three tiers:
 - [ ] **Cost Tracking Dashboard** - Monitor API spend in real-time
 
 #### Collaboration
-- [ ] **Session Sharing** - Share conversations via URL
+- [x] **Session Sharing** - Share conversations via URL (local)
 - [ ] **Team Workspaces** - Shared sessions, shared memory
 - [ ] **Real-time Collaboration** - Multiple users in same session
-- [ ] **Export Formats** - Export to Markdown, JSON, or executable scripts
+- [x] **Export Formats** - Export to Markdown, JSON, or executable scripts
 
 #### IDE Integration
 - [ ] **VS Code Extension** - Native integration with file syncing
 - [ ] **Neovim Plugin** - Lua-based plugin for Neovim users  
 - [ ] **JetBrains Plugin** - Support for IntelliJ-based IDEs
-- [ ] **Language Server** - Act as an LSP for AI-powered completions
+- [x] **Language Server** - Act as an LSP for AI-powered completions (scaffolding)
 
 #### Voice & Accessibility
 - [ ] **Voice Input** - Whisper-based speech-to-text

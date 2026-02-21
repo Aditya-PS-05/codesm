@@ -155,6 +155,52 @@ app.add_typer(memory_app, name="memory")
 app.add_typer(index_app, name="index")
 
 
+@app.command()
+def login(
+    provider: str = typer.Option("anthropic", "--provider", "-p", help="Provider (anthropic, openai)"),
+):
+    """Store API credentials"""
+    from codesm.auth.credentials import CredentialStore
+    from rich.prompt import Prompt
+    
+    store = CredentialStore()
+    
+    # Prompt for key if not provided
+    key = Prompt.ask(f"Enter API key for [green]{provider}[/green]", password=True)
+    
+    if key:
+        store.set(provider, {"api_key": key})
+        print(f"Credentials saved for {provider}")
+    else:
+        print("No key provided")
+
+
+@app.command()
+def logout(
+    provider: str = typer.Option("anthropic", "--provider", "-p", help="Provider to remove"),
+):
+    """Remove API credentials"""
+    from codesm.auth.credentials import CredentialStore
+    import typer
+    
+    store = CredentialStore()
+    
+    if not store.get(provider):
+        print(f"No credentials found for {provider}")
+        return
+        
+    if typer.confirm(f"Remove credentials for {provider}?"):
+        store.delete(provider)
+        print(f"Credentials removed for {provider}")
+
+
+# Import subcommands
+from codesm.cli_threads import app as threads_app
+from codesm.cli_tools import app as tools_app
+
+app.add_typer(threads_app, name="threads")
+app.add_typer(tools_app, name="tools")
+
 @app.callback()
 def main_callback(
     ctx: typer.Context,
@@ -165,6 +211,11 @@ def main_callback(
         is_eager=True,
         help="Print the version number and exit.",
     ),
+    execute: str = typer.Option(
+        None,
+        "--execute", "-x",
+        help="Execute a prompt non-interactively and exit.",
+    ),
     help_flag: bool = typer.Option(
         False,
         "--help",
@@ -174,6 +225,33 @@ def main_callback(
     ),
 ):
     """AI coding agent"""
+    if execute:
+        # Non-interactive execution mode
+        import asyncio
+        from codesm.agent.agent import Agent
+        from codesm.auth.credentials import CredentialStore
+        
+        async def run_execute():
+            store = CredentialStore()
+            model = store.get_preferred_model() or "anthropic/claude-sonnet-4-20250514"
+            
+            # Initialize agent
+            agent = Agent(directory=Path("."), model=model)
+            
+            # We want to capture the final answer, not the whole stream
+            full_response = ""
+            async for chunk in agent.chat(execute):
+                if chunk.type == "text":
+                    full_response += chunk.content
+            
+            # Print only the final result
+            print(full_response)
+            
+            await agent.cleanup()
+            
+        asyncio.run(run_execute())
+        raise typer.Exit()
+
     if ctx.invoked_subcommand is None:
         print(HELP_TEXT)
         raise typer.Exit()
@@ -227,13 +305,17 @@ def chat(
 
     async def run_chat():
         agent = Agent(directory=directory, model=model)
-        async for chunk in agent.chat(message):
-            # chunk is a StreamChunk object, extract the content
-            if hasattr(chunk, 'content'):
-                print(chunk.content, end="", flush=True)
-            else:
-                print(chunk, end="", flush=True)
-        print()
+        # Initialize MCP explicitly if needed, but agent.chat() does it
+        try:
+            async for chunk in agent.chat(message):
+                # chunk is a StreamChunk object, extract the content
+                if hasattr(chunk, 'content'):
+                    print(chunk.content, end="", flush=True)
+                else:
+                    print(chunk, end="", flush=True)
+            print()
+        finally:
+            await agent.cleanup()
 
     asyncio.run(run_chat())
 
@@ -246,6 +328,29 @@ def serve(
     """Start HTTP API server"""
     from codesm.server.server import start_server
     start_server(port=port, directory=directory)
+
+
+@app.command()
+def lsp():
+    """Start Language Server (stdio)"""
+    from codesm.lsp.server import start_lsp
+    start_lsp()
+
+# Register subcommands
+try:
+    from codesm.cli_threads import app as threads_app
+    app.add_typer(threads_app, name="threads", help="Manage sessions")
+    
+    from codesm.cli_tools import app as tools_app
+    app.add_typer(tools_app, name="tools", help="Explore tools")
+    
+    from codesm.cli_permissions import app as perms_app
+    app.add_typer(perms_app, name="permissions", help="Manage permissions")
+
+    from codesm.cli_mcp import app as mcp_app
+    app.add_typer(mcp_app, name="mcp", help="Manage MCP servers")
+except ImportError as e:
+    pass
 
 
 @app.command()
@@ -301,109 +406,6 @@ def init(
         editor = os.environ.get("EDITOR", "vim")
         os.system(f"{editor} {agents_path}")
 
-
-# MCP subcommands
-mcp_app = typer.Typer(help="MCP (Model Context Protocol) management")
-app.add_typer(mcp_app, name="mcp")
-
-
-@mcp_app.command("list")
-def mcp_list(
-    config: Path = typer.Option(None, "--config", "-c", help="Path to MCP config file"),
-):
-    """List configured MCP servers"""
-    from codesm.mcp import load_mcp_config
-    from rich.console import Console
-    from rich.table import Table
-
-    console = Console()
-    servers = load_mcp_config(config)
-
-    if not servers:
-        console.print("[yellow]No MCP servers configured[/yellow]")
-        console.print("Create a config file with 'codesm mcp init'")
-        return
-
-    table = Table(title="MCP Servers")
-    table.add_column("Name", style="cyan")
-    table.add_column("Command", style="green")
-    table.add_column("Transport")
-
-    for name, server in servers.items():
-        cmd = f"{server.command} {' '.join(server.args)}"
-        if len(cmd) > 50:
-            cmd = cmd[:47] + "..."
-        table.add_row(name, cmd, server.transport)
-
-    console.print(table)
-
-
-@mcp_app.command("test")
-def mcp_test(
-    server_name: str = typer.Argument(None, help="Server name to test (tests all if omitted)"),
-    config: Path = typer.Option(None, "--config", "-c", help="Path to MCP config file"),
-):
-    """Test connection to MCP servers"""
-    import asyncio
-    from codesm.mcp import load_mcp_config, MCPManager
-    from rich.console import Console
-
-    console = Console()
-    servers = load_mcp_config(config)
-
-    if not servers:
-        console.print("[red]No MCP servers configured[/red]")
-        return
-
-    async def test_servers():
-        manager = MCPManager()
-        
-        for name, server_config in servers.items():
-            if server_name and name != server_name:
-                continue
-            manager.add_server(server_config)
-
-        with console.status("Connecting to MCP servers..."):
-            results = await manager.connect_all()
-
-        for name, success in results.items():
-            if success:
-                client = manager._clients.get(name)
-                tools = len(client.tools) if client else 0
-                resources = len(client.resources) if client else 0
-                console.print(f"[green]✓[/green] {name}: {tools} tools, {resources} resources")
-            else:
-                console.print(f"[red]✗[/red] {name}: connection failed")
-
-        # List discovered tools
-        tools = manager.list_all_tools()
-        if tools:
-            console.print(f"\n[bold]Discovered {len(tools)} tools:[/bold]")
-            for tool in tools:
-                console.print(f"  • {tool['server']}/{tool['name']}: {tool['description'][:60]}...")
-
-        await manager.disconnect_all()
-
-    asyncio.run(test_servers())
-
-
-@mcp_app.command("init")
-def mcp_init(
-    path: Path = typer.Argument(Path("mcp-servers.json"), help="Path to create config file"),
-):
-    """Create an example MCP configuration file"""
-    from codesm.mcp import create_example_config
-    from rich.console import Console
-
-    console = Console()
-    
-    if path.exists():
-        if not typer.confirm(f"{path} already exists. Overwrite?"):
-            raise typer.Abort()
-
-    create_example_config(path)
-    console.print(f"[green]Created example MCP config at {path}[/green]")
-    console.print("Edit the file to configure your MCP servers.")
 
 
 def main():

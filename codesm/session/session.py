@@ -49,7 +49,13 @@ class Session:
         session.save()
         
         # Trigger background indexing for new sessions
-        asyncio.create_task(ProjectIndexer(resolved_dir).ensure_index())
+        # Trigger background indexing for new sessions
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(ProjectIndexer(resolved_dir).ensure_index())
+        except RuntimeError:
+            # No running loop (e.g. CLI usage), skip background indexing
+            pass
         
         return session
     

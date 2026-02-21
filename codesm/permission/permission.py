@@ -348,6 +348,14 @@ def check_path_permission(
     allowed_paths: Optional[list[str]] = None,
 ) -> None:
     """Check path permission and raise PathBlockedError if blocked."""
+    # Load rules from store if not explicitly provided
+    if guarded_paths is None and allowed_paths is None:
+        from codesm.permission.store import get_store
+        rules = get_store().get_rules()
+        guarded_paths = rules.guarded_paths or None
+        # Note: We don't strictly enforce allowed_paths from store by default yet 
+        # as it might break existing workflows unless user opts-in.
+        
     allowed, reason = is_path_allowed(path, working_dir, guarded_paths, allowed_paths)
     if not allowed:
         raise PathBlockedError(str(path), reason)
@@ -359,6 +367,13 @@ def check_command_permission(
     allowlist: Optional[list[str]] = None,
 ) -> None:
     """Check command permission and raise CommandBlockedError if blocked."""
+    # Load rules from store if not explicitly provided
+    if blocklist is None and allowlist is None:
+        from codesm.permission.store import get_store
+        rules = get_store().get_rules()
+        blocklist = rules.blocklist or None
+        allowlist = rules.allowlist or None
+
     blocked, reason = is_command_blocked(command, blocklist, allowlist)
     if blocked:
         raise CommandBlockedError(command, reason)
