@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none" role="img" aria-label="Codesm logo">
+  <title>Codesm</title>
+  <desc>A terminal window with a green prompt chevron, a white cursor block, and a gold AI spark.</desc>
+
+  <!-- Background: rounded square, GitHub-dark friendly -->
+  <rect width="120" height="120" rx="24" fill="#0D1117"/>
+  <rect x="0.5" y="0.5" width="119" height="119" rx="23.5" stroke="#21262D" stroke-width="1"/>
+
+  <!-- Terminal window dots -->
+  <circle cx="18" cy="20" r="3" fill="#FF5F57"/>
+  <circle cx="30" cy="20" r="3" fill="#FEBC2E"/>
+  <circle cx="42" cy="20" r="3" fill="#28C840"/>
+
+  <!-- Faint top-bar separator -->
+  <line x1="8" y1="32" x2="112" y2="32" stroke="#21262D" stroke-width="1"/>
+
+  <!-- Prompt chevron > -->
+  <path d="M 28 54 L 52 72 L 28 90"
+        stroke="#7EE787"
+        stroke-width="7"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+
+  <!-- Cursor block -->
+  <rect x="62" y="66" width="30" height="12" rx="1.5" fill="#F0F6FC"/>
+
+  <!-- AI spark (4-point star) -->
+  <path d="M 92 38
+           L 94 46
+           L 102 48
+           L 94 50
+           L 92 58
+           L 90 50
+           L 82 48
+           L 90 46 Z"
+        fill="#FFD166"/>
+</svg>
