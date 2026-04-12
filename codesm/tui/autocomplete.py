@@ -125,7 +125,7 @@ class AutocompletePopup(ModalScreen[str | None]):
                     display=f"@{agent}",
                     value=f"@{agent}",
                     description="Subagent",
-                    icon="🤖"
+                    icon=""
                 ))
         else:
             self._options = self._get_command_options()
@@ -155,7 +155,7 @@ class AutocompletePopup(ModalScreen[str | None]):
                         display=f"{rel_path}/",
                         value=str(rel_path) + "/",
                         description="Directory",
-                        icon="📁"
+                        icon=""
                     ))
                 
                 # Add files
@@ -180,23 +180,8 @@ class AutocompletePopup(ModalScreen[str | None]):
         return options
 
     def _get_file_icon(self, ext: str) -> str:
-        """Get icon for file extension."""
-        icons = {
-            '.py': '🐍',
-            '.js': '📜',
-            '.ts': '📘',
-            '.tsx': '⚛️',
-            '.jsx': '⚛️',
-            '.json': '📋',
-            '.md': '📝',
-            '.txt': '📄',
-            '.yaml': '⚙️',
-            '.yml': '⚙️',
-            '.toml': '⚙️',
-            '.rs': '🦀',
-            '.go': '🐹',
-        }
-        return icons.get(ext, '📄')
+        """Get icon for file extension. Returns an empty string; file extension is shown in description."""
+        return ""
 
     def _get_command_options(self) -> list[AutocompleteOption]:
         """Get available commands."""

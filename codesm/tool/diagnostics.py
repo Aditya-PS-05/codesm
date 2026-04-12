@@ -60,9 +60,9 @@ def format_diagnostics(diagnostics: list) -> str:
     """Format diagnostics for display with clickable file links."""
     lines = []
     for d in diagnostics:
-        severity_icon = {"error": "❌", "warning": "⚠️", "info": "ℹ️", "hint": "💡"}.get(d.severity, "•")
+        severity_label = {"error": "[error]", "warning": "[warn]", "info": "[info]", "hint": "[hint]"}.get(d.severity, "[note]")
         source_str = f" [{d.source}]" if d.source else ""
         file_link = file_link_with_path(d.path, d.line)
-        lines.append(f"{severity_icon} {file_link}:{d.column}{source_str}")
+        lines.append(f"{severity_label} {file_link}:{d.column}{source_str}")
         lines.append(f"   {d.message}")
     return "\n".join(lines)

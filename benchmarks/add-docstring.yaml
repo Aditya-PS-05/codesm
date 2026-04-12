@@ -1,0 +1,24 @@
+name: "add-docstring"
+description: "Add a docstring to the hello() function in /tmp/codesm-eval-test.py"
+
+setup:
+  - rm -f /tmp/codesm-eval-test.py
+  - |
+    cat > /tmp/codesm-eval-test.py <<'EOF'
+    def hello():
+        return 'world'
+    EOF
+
+prompt: |
+  Open /tmp/codesm-eval-test.py. The hello() function has no docstring.
+  Add a single line docstring to it that says: Return the string world.
+  Do not rename the function or change its return value.
+
+assertion:
+  - test -f /tmp/codesm-eval-test.py
+  - grep -q '"""' /tmp/codesm-eval-test.py
+  - python3 -c "import ast; ast.parse(open('/tmp/codesm-eval-test.py').read())"
+  - python3 -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('m', '/tmp/codesm-eval-test.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); assert m.hello() == 'world'"
+
+max_iterations: 15
+timeout: 180

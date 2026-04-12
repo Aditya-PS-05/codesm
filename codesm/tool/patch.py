@@ -418,7 +418,7 @@ class PatchTool(Tool):
         
         # Errors at the end
         if results["errors"]:
-            output += "\n\n⚠️ Errors:\n" + "\n".join(f"  {e}" for e in results["errors"])
+            output += "\n\nErrors:\n" + "\n".join(f"  {e}" for e in results["errors"])
         
         return output
     

@@ -25,6 +25,7 @@ Commands:
 
   run          Start the codesm agent (interactive TUI)
   chat         Send a single message (non-interactive)
+  eval         Run a coding-model eval task from a YAML file and print JSON report
   serve        Start HTTP API server
   init         Initialize project with AGENTS.md
   mcp          Manage MCP servers
@@ -64,6 +65,16 @@ Send a single message (non-interactive):
 Send a message with a specific model:
 
   $ codesm chat "fix the bug" --model anthropic/claude-sonnet-4-20250514
+
+Run a coding-model eval task and print a JSON report:
+
+  $ codesm eval benchmarks/add-docstring.yaml --pretty
+
+Run the same task against a specific model and save the JSON:
+
+  $ codesm eval benchmarks/add-docstring.yaml \
+      --model anthropic/claude-sonnet-4-20250514 \
+      --output reports/add-docstring.json
 
 Initialize project with AGENTS.md:
 
@@ -300,6 +311,69 @@ def init(
     if edit:
         editor = os.environ.get("EDITOR", "vim")
         os.system(f"{editor} {agents_path}")
+
+
+@app.command("eval")
+def eval_cmd(
+    task_file: Path = typer.Argument(..., help="Path to a YAML eval task file"),
+    model: str = typer.Option(None, "--model", "-m", help="Override the task's model (provider/model)"),
+    directory: Path = typer.Option(None, "--dir", "-d", help="Override the task's working directory"),
+    output: Path = typer.Option(None, "--output", "-o", help="Write full JSON report to this path"),
+    pretty: bool = typer.Option(False, "--pretty", help="Print a human readable summary before the JSON"),
+):
+    """Run a coding-model eval task and print a structured JSON report.
+
+    The task file is YAML with name, prompt, setup, assertion fields.
+    The report captures provider, tokens, tool calls, iterations, context
+    compaction, permission denials, tool errors, wall clock, and verdict.
+    """
+    import asyncio
+    import json
+    from codesm.eval import load_task, run_task
+
+    try:
+        task = load_task(task_file)
+    except (FileNotFoundError, ValueError) as e:
+        typer.echo(f"Error loading task file: {e}", err=True)
+        raise typer.Exit(2)
+
+    async def run():
+        return await run_task(
+            task,
+            task_file=task_file,
+            model_override=model,
+            directory_override=directory,
+        )
+
+    report = asyncio.run(run())
+
+    if pretty:
+        verdict = "PASS" if report.passed else "FAIL"
+        typer.echo(f":: {verdict}  {report.task_name}  ({report.wall_clock_ms}ms)")
+        typer.echo(f"   model: {report.model}")
+        typer.echo(f"   iterations: {report.iterations}  tool_calls: {sum(report.tool_calls.values())}")
+        if report.compaction_events:
+            typer.echo(f"   compactions: {len(report.compaction_events)} (dropped {report.compaction_tokens_dropped} tokens)")
+        if report.tool_errors:
+            typer.echo(f"   tool_errors: {len(report.tool_errors)}")
+        if report.permission_denials:
+            typer.echo(f"   permission_denials: {report.permission_denials}")
+        for a in report.assertions:
+            mark = "OK" if a.passed else "FAIL"
+            typer.echo(f"   [{mark}] {a.command}")
+        if report.error:
+            typer.echo(f"   error: {report.error}")
+        typer.echo("")
+
+    payload = json.dumps(report.to_dict(), indent=2, default=str)
+
+    if output:
+        output.write_text(payload)
+        typer.echo(f"Report written to {output}")
+    else:
+        typer.echo(payload)
+
+    raise typer.Exit(0 if report.passed else 1)
 
 
 # MCP subcommands

@@ -49,6 +49,12 @@ class Agent:
         # Rules discovery (AGENTS.md, CLAUDE.md, etc.)
         self.rules = RulesDiscovery(workspace=self.directory)
 
+        # Optional eval instrumentation hooks. When the eval runner sets
+        # these, chat() propagates them into the ReAct loop context so the
+        # loop can record compaction, tool errors, and token usage.
+        self._eval_events: list[dict] | None = None
+        self._eval_usage: dict | None = None
+
     @property
     def model(self) -> str:
         """Get current model"""
@@ -141,6 +147,12 @@ class Agent:
             "model": self._model,
             "skills": self.skills,  # Add skills manager to context
         }
+
+        # Propagate eval instrumentation hooks if the runner attached any.
+        if self._eval_events is not None:
+            context["eval_events"] = self._eval_events
+        if self._eval_usage is not None:
+            context["eval_usage"] = self._eval_usage
         
         # Run ReAct loop
         full_response = ""

@@ -81,27 +81,26 @@ class RefactorAnalysis:
             for s in sorted(suggestions, key=lambda x: (
                 {"high": 0, "medium": 1, "low": 2}.get(x.priority, 3)
             )):
-                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s.priority, "⚪")
+                priority_label = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(s.priority, "[INFO]")
                 loc = f"{s.file}:{s.start_line}" if s.start_line else s.file
-                lines.append(f"{priority_icon} **{s.title}**")
-                lines.append(f"   📍 `{loc}`")
+                lines.append(f"{priority_label} **{s.title}**")
+                lines.append(f"   `{loc}`")
                 lines.append(f"   {s.description}")
-                
+
                 if s.before_snippet and s.after_snippet:
                     lines.append("   ```")
                     lines.append(f"   # Before: {s.before_snippet[:60]}...")
                     lines.append(f"   # After:  {s.after_snippet[:60]}...")
                     lines.append("   ```")
-                
-                effort_icon = {"low": "⚡", "medium": "⏱️", "high": "🔧"}.get(s.effort, "")
-                lines.append(f"   Effort: {effort_icon} {s.effort} | Impact: {s.impact}")
+
+                lines.append(f"   Effort: {s.effort} | Impact: {s.impact}")
                 lines.append("")
         
         # Quick wins section
         quick_wins = self.quick_wins
         if quick_wins:
             lines.append("---")
-            lines.append(f"### ⚡ Quick Wins ({len(quick_wins)} low-effort improvements)")
+            lines.append(f"### Quick Wins ({len(quick_wins)} low effort improvements)")
             for s in quick_wins[:5]:
                 lines.append(f"- {s.title} in `{s.file}`")
         

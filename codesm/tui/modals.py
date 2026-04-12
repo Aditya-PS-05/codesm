@@ -1197,7 +1197,7 @@ class PermissionModal(ModalScreen):
 
         with Vertical(id="permission-container"):
             with Horizontal(id="permission-header"):
-                yield Static(f"⚠️  {self.request.title}", id="permission-title")
+                yield Static(f"{self.request.title}", id="permission-title")
                 yield Static(f"[{self.request.type}]", id="permission-type")
 
             # Render description as markdown for syntax highlighting
@@ -1518,7 +1518,7 @@ class DiffPreviewModal(ModalScreen):
         
         with Vertical(id="diff-container"):
             with Horizontal(id="diff-header"):
-                yield Static(f"📝 Preview: {self.tool_name.title()}", id="diff-title")
+                yield Static(f"Preview: {self.tool_name.title()}", id="diff-title")
                 yield Static(f"[{path.name}]", id="diff-file-info")
 
             yield Static(diff_text, id="diff-content")

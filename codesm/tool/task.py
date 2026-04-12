@@ -319,21 +319,21 @@ class ParallelTaskTool(Tool):
         output_parts = []
         
         # Header with summary
-        status_emoji = "✅" if failed == 0 else "⚠️" if successful > 0 else "❌"
+        status_label = "[OK]" if failed == 0 else "[PARTIAL]" if successful > 0 else "[FAIL]"
         output_parts.append(
-            f"{status_emoji} **Parallel Tasks Complete** — "
+            f"{status_label} **Parallel Tasks Complete**: "
             f"{successful}/{len(results)} succeeded in {total_duration_ms}ms"
         )
-        
+
         if failed > 0:
-            output_parts.append(f"\n⚠️ {failed} task(s) failed")
+            output_parts.append(f"\n[WARN] {failed} task(s) failed")
         
         output_parts.append("\n")
         
         # Individual results
         for i, r in enumerate(results, 1):
-            emoji = "✓" if r.success else "✗"
-            header = f"\n---\n### {i}. {emoji} {r.description} @{r.subagent_type} ({r.duration_ms}ms)"
+            marker = "[OK]" if r.success else "[FAIL]"
+            header = f"\n---\n### {i}. {marker} {r.description} @{r.subagent_type} ({r.duration_ms}ms)"
             output_parts.append(header)
             
             if r.success:

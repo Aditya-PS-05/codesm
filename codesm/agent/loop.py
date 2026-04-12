@@ -32,28 +32,44 @@ class ReActLoop:
         iteration = 0
         current_messages = list(messages)  # Copy to avoid mutating original
         session = context.get("session")
-        
+
+        # Optional eval instrumentation sink. When the eval runner attached a
+        # list under this key, we append structured events to it. This is
+        # backwards compatible: if the key is absent, nothing happens.
+        eval_events = context.get("eval_events")
+
         # Get or create ContextManager for compaction
         context_manager = context.get("context_manager")
         if context_manager is None:
             context_manager = ContextManager()
-        
+
         while self.max_iterations == 0 or iteration < self.max_iterations:
             iteration += 1
-            
+
+            if isinstance(eval_events, list):
+                eval_events.append({"type": "iteration_start", "n": iteration})
+
             # Compact context if needed
             if context_manager.should_compact(current_messages):
                 tokens_before = context_manager.estimate_tokens(current_messages)
-                
+
                 async def summarizer(msgs):
                     return await summarize_messages(msgs)
-                
+
                 current_messages = await context_manager.compact_messages_async(
                     current_messages,
                     summarizer=summarizer,
                 )
                 tokens_after = context_manager.estimate_tokens(current_messages)
                 logger.info(f"Compacted context from {tokens_before} to {tokens_after} tokens")
+
+                if isinstance(eval_events, list):
+                    eval_events.append({
+                        "type": "compaction",
+                        "iteration": iteration,
+                        "tokens_before": tokens_before,
+                        "tokens_after": tokens_after,
+                    })
             
             # Get response from LLM
             response_text = ""
@@ -128,7 +144,18 @@ class ReActLoop:
             
             # Execute all tools in parallel
             results = await tools.execute_parallel(parsed_calls, context)
-            
+
+            # Emit tool_error events for results that look like errors
+            if isinstance(eval_events, list):
+                for call_id, name, result in results:
+                    if isinstance(result, str) and result.strip().lower().startswith("error"):
+                        eval_events.append({
+                            "type": "tool_error",
+                            "iteration": iteration,
+                            "tool": name,
+                            "message": result[:500],
+                        })
+
             # Process results in order
             for call_id, name, result in results:
                 # Add tool result to messages (for this turn only, not persisted)
@@ -159,6 +186,8 @@ class ReActLoop:
                     return  # Stop the loop after handoff
         
         if self.max_iterations > 0 and iteration >= self.max_iterations:
+            if isinstance(eval_events, list):
+                eval_events.append({"type": "max_iterations", "n": iteration})
             yield StreamChunk(
                 type="text",
                 content="\n\n[Maximum iterations reached - stopping]",

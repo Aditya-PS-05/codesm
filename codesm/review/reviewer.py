@@ -83,7 +83,7 @@ class ReviewResult:
             lines.append("**Warnings:**")
             for issue in warnings:
                 loc = f"{issue.file}:{issue.line}" if issue.line else issue.file
-                lines.append(f"  ⚠ [{loc}] {issue.description}")
+                lines.append(f"  [!] [{loc}] {issue.description}")
                 if issue.fix:
                     lines.append(f"    → Fix: {issue.fix}")
             lines.append("")

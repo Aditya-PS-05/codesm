@@ -942,7 +942,7 @@ class ThinkingTreeWidget(Static, can_focus=True):
             text.append("✓ ", style=f"bold {GREEN}")
             text.append(self._message, style="bold white")
             if self._summary:
-                text.append(f" — {self._summary[:50]}...", style="dim")
+                text.append(f": {self._summary[:50]}...", style="dim")
             return text
         
         # Expand/collapse indicator
@@ -1034,7 +1034,7 @@ class OracleTreeWidget(Static, can_focus=True):
             └── 3. Third recommendation
     
     When collapsed:
-        ▸ ✓ Oracle — Summary preview...
+        ▸ ✓ Oracle: Summary preview...
     """
     
     DEFAULT_CSS = """
@@ -1089,7 +1089,7 @@ class OracleTreeWidget(Static, can_focus=True):
             text.append(self._title, style=f"bold {PURPLE}")
             if self._summary:
                 summary_preview = self._summary[:60] + "..." if len(self._summary) > 60 else self._summary
-                text.append(f" — {summary_preview}", style="dim")
+                text.append(f": {summary_preview}", style="dim")
             return text
         
         # Expanded state - header
@@ -1309,7 +1309,7 @@ class SubAgentTreeWidget(Static, can_focus=True):
             desc_preview = self._description[:50] + "..." if len(self._description) > 50 else self._description
             text.append(desc_preview, style="bold white")
             if self._result_summary:
-                text.append(f" — {self._result_summary[:30]}...", style="dim")
+                text.append(f": {self._result_summary[:30]}...", style="dim")
             return text
         
         # Expanded header
@@ -1830,7 +1830,7 @@ class CodeReviewWidget(Static):
             text.append("Warnings:\n", style=f"bold {YELLOW}")
             for issue in warnings:
                 loc = f"{issue.file}:{issue.line}" if issue.line else issue.file
-                text.append("  ⚠ ", style=f"bold {YELLOW}")
+                text.append("  [!] ", style=f"bold {YELLOW}")
                 text.append(f"[{loc}] ", style=CYAN)
                 text.append(f"{issue.description}\n", style="")
                 if issue.fix:

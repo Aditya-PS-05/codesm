@@ -521,11 +521,11 @@ class CodesmApp(App):
                 def on_file_change(change):
                     """Handle file change events"""
                     # Format notification based on change type
-                    icon = "📝" if change.change_type == ChangeType.MODIFIED else \
-                           "✨" if change.change_type == ChangeType.CREATED else "🗑️"
-                    
+                    label = "[edit]" if change.change_type == ChangeType.MODIFIED else \
+                           "[new]" if change.change_type == ChangeType.CREATED else "[del]"
+
                     self.notify(
-                        f"{icon} {change.relative_path} {change.change_type.value}",
+                        f"{label} {change.relative_path} {change.change_type.value}",
                         timeout=2,
                     )
                     
@@ -715,7 +715,7 @@ class CodesmApp(App):
             total_tokens = session_stats.total_input_tokens + session_stats.total_output_tokens
             
             msg = (
-                f"💰 Session: {session_cost} ({total_tokens:,} tokens) | "
+                f"Session: {session_cost} ({total_tokens:,} tokens) | "
                 f"Today: {daily_cost} ({budget_pct:.0f}% of budget) | "
                 f"Remaining: {remaining}"
             )
@@ -1338,7 +1338,7 @@ class CodesmApp(App):
                     
                     # If critical issues, notify user
                     if result.has_critical:
-                        self.notify("⚠️ Code review found critical issues!", severity="warning")
+                        self.notify("Code review found critical issues!", severity="warning")
                     elif result.has_warnings:
                         self.notify("Code review found some warnings", severity="information")
             except Exception as e:
@@ -1818,9 +1818,9 @@ class CodesmApp(App):
         self._dry_run_mode = not self._dry_run_mode
         
         if self._dry_run_mode:
-            self.notify("🔍 Dry-run mode ENABLED - changes will be previewed only")
+            self.notify("Dry run mode ENABLED. Changes will be previewed only.")
         else:
-            self.notify("✅ Dry-run mode DISABLED - changes will be applied")
+            self.notify("Dry run mode DISABLED. Changes will be applied.")
     
     def _show_audit_log(self):
         """Show recent agent actions from audit log"""

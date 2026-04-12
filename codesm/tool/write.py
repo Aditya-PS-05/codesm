@@ -193,9 +193,9 @@ class WriteTool(Tool):
             result = await format_file_if_enabled(path, session_id)
             
             if result and result.formatted:
-                return f"✨ Formatted with {result.formatter}"
+                return f"Formatted with {result.formatter}"
             elif result and not result.success and result.error:
-                return f"⚠️ Format failed: {result.error}"
+                return f"Format failed: {result.error}"
             return ""
         except Exception:
             return ""
@@ -256,7 +256,7 @@ class WriteTool(Tool):
             errors = [d for d in diagnostics if d.severity == "error"]
             
             if errors:
-                return f"⚠️ Errors detected:\n{format_diagnostics(errors)}"
+                return f"Errors detected:\n{format_diagnostics(errors)}"
             return ""
         except Exception:
             return ""

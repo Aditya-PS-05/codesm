@@ -198,7 +198,7 @@ class MultiFileEditTool(Tool):
             for error in result.errors:
                 error_msg += f"  • {error}\n"
             if result.rolled_back:
-                error_msg += "\n✓ All partial changes have been rolled back."
+                error_msg += "\nAll partial changes have been rolled back."
             return error_msg
         
         # Build success output
@@ -323,9 +323,9 @@ class MultiFileEditTool(Tool):
             result = await format_file_if_enabled(path, session_id)
             
             if result and result.formatted:
-                return f"✨ Formatted with {result.formatter}"
+                return f"Formatted with {result.formatter}"
             elif result and not result.success and result.error:
-                return f"⚠️ Format failed: {result.error}"
+                return f"Format failed: {result.error}"
             return ""
         except Exception:
             return ""
