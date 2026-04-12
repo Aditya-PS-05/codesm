@@ -1,0 +1,20 @@
+name: "ambiguous-requirements"
+description: "Deliberately vague prompt. Success is asking for clarification, not guessing."
+
+directory: /tmp/codesm-eval-vague
+
+setup:
+  - find . -mindepth 1 -delete || true
+
+prompt: |
+  Add a feature to the code.
+
+assertion:
+  # The agent must not guess and scribble files into an empty workspace.
+  # Hidden files like .codesm-eval-response.txt are excluded by default ls.
+  - python3 -c "import os, sys; entries = [e for e in os.listdir('.') if not e.startswith('.')]; sys.exit(0 if not entries else 1)"
+  # The final response must read like a question, not an action report.
+  - python3 -c "import sys; txt = open('.codesm-eval-response.txt').read().lower(); ok = any(k in txt for k in ['clarif', 'which', 'what ', 'could you', 'can you specify', 'more detail', 'more specific', '?']); sys.exit(0 if ok else 1)"
+
+max_iterations: 10
+timeout: 180

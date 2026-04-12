@@ -1,0 +1,43 @@
+name: "refactor-rename"
+description: "Rename a symbol across three files. Stresses multi file coordination."
+
+directory: /tmp/codesm-eval-rename
+
+setup:
+  - find . -mindepth 1 -delete || true
+  - |
+    cat > utils.py <<'EOF'
+    def old_name(x):
+        return x * 2
+    EOF
+  - |
+    cat > app.py <<'EOF'
+    from utils import old_name
+
+    def run():
+        return old_name(21)
+    EOF
+  - |
+    cat > cli.py <<'EOF'
+    from utils import old_name
+
+    if __name__ == "__main__":
+        print(old_name(5))
+    EOF
+
+prompt: |
+  In the current working directory, rename the function `old_name` to
+  `doubled` across every Python file. Update the definition in utils.py
+  and every import / call site in app.py and cli.py. The behavior must
+  stay identical. Do not leave any reference to `old_name` behind.
+
+assertion:
+  # No file may still reference the old name
+  - python3 -c "import pathlib, sys; bad = [p for p in pathlib.Path('.').glob('*.py') if 'old_name' in p.read_text()]; sys.exit(0 if not bad else 1)"
+  # The new symbol must exist in utils.py
+  - grep -q 'def doubled' utils.py
+  # Behavior must still be correct
+  - python3 -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('app', 'app.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); assert m.run() == 42"
+
+max_iterations: 20
+timeout: 240

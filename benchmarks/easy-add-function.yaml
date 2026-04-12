@@ -1,0 +1,23 @@
+name: "easy-add-function"
+description: "Baseline: add a trivial function. Every competent agent should pass this."
+
+directory: /tmp/codesm-eval-easy
+
+setup:
+  - find . -mindepth 1 -delete || true
+  - |
+    cat > math_utils.py <<'EOF'
+    # Put the add function here.
+    EOF
+
+prompt: |
+  In math_utils.py (in the current working directory), define a function
+  named `add` that takes two arguments `a` and `b` and returns `a + b`.
+  Do not rename the file. Do not add any other functions.
+
+assertion:
+  - test -f math_utils.py
+  - python3 -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('m', 'math_utils.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); assert m.add(2, 3) == 5; assert m.add(-1, 1) == 0; assert m.add(0, 0) == 0"
+
+max_iterations: 10
+timeout: 180

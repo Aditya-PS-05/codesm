@@ -1,0 +1,37 @@
+name: "long-context"
+description: "Large file forces context compaction or selective reading. Surfaces context-management failure modes."
+
+directory: /tmp/codesm-eval-longctx
+
+setup:
+  - find . -mindepth 1 -delete || true
+  # Generate a ~3000-function Python file. 82 functions will contain the
+  # substring "banana" (indices where i % 37 == 0, for i in [0, 2999]).
+  # Each function carries a padded docstring so the file crosses the
+  # compaction threshold when read whole.
+  - |
+    python3 -c "
+    lines = []
+    pad = 'x' * 160
+    for i in range(3000):
+        prefix = 'banana_func_' if i % 37 == 0 else 'regular_func_'
+        lines.append(f'def {prefix}{i}():')
+        lines.append(f'    \"\"\"{pad}\"\"\"')
+        lines.append(f'    return {i}')
+        lines.append('')
+    open('big.py', 'w').write('\n'.join(lines))
+    "
+  - wc -l big.py
+
+prompt: |
+  The file big.py in the current working directory defines thousands of
+  functions. Count exactly how many function names (the identifiers after
+  `def`) contain the substring `banana`. Report the count as a plain
+  integer in your final answer. Do not report a range or an estimate.
+
+assertion:
+  # The correct count is 82: floor(2999 / 37) + 1 = 81 + 1.
+  - python3 -c "import re, sys; txt = open('.codesm-eval-response.txt').read(); nums = re.findall(r'\b82\b', txt); sys.exit(0 if nums else 1)"
+
+max_iterations: 20
+timeout: 300

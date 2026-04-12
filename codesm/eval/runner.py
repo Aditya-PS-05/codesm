@@ -205,6 +205,15 @@ async def run_task(
     report.tokens_in = int(eval_usage.get("tokens_in", 0))
     report.tokens_out = int(eval_usage.get("tokens_out", 0))
 
+    # Materialise the agent's final response as a file in the workdir so
+    # shell assertions can grep it. Benchmarks like ambiguous-requirements
+    # and adversarial-secret rely on this to observe the model's behavior.
+    response_path = workdir / ".codesm-eval-response.txt"
+    try:
+        response_path.write_text(report.final_response or "")
+    except Exception as e:
+        logger.warning(f"Could not write eval response artifact: {e}")
+
     # 3. Run assertion shell commands
     assertion_start = time.time()
     for cmd in task.assertion:
