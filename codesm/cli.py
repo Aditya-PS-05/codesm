@@ -320,16 +320,36 @@ def eval_cmd(
     directory: Path = typer.Option(None, "--dir", "-d", help="Override the task's working directory"),
     output: Path = typer.Option(None, "--output", "-o", help="Write full JSON report to this path"),
     pretty: bool = typer.Option(False, "--pretty", help="Print a human readable summary before the JSON"),
+    all_providers: bool = typer.Option(
+        False,
+        "--all-providers",
+        help="Run the task against Anthropic, OpenAI, and OpenRouter with default models and print a side by side comparison",
+    ),
+    providers: str = typer.Option(
+        None,
+        "--providers",
+        help="Comma separated model list to compare instead of the default set (implies --all-providers)",
+    ),
 ):
     """Run a coding-model eval task and print a structured JSON report.
 
     The task file is YAML with name, prompt, setup, assertion fields.
     The report captures provider, tokens, tool calls, iterations, context
     compaction, permission denials, tool errors, wall clock, and verdict.
+
+    Pass --all-providers to run the same task against Anthropic, OpenAI,
+    and OpenRouter and get a side by side table of tokens, tool calls,
+    time, and pass/fail verdict.
     """
     import asyncio
     import json
-    from codesm.eval import load_task, run_task
+    from codesm.eval import (
+        DEFAULT_PROVIDER_MODELS,
+        format_comparison_table,
+        load_task,
+        run_comparison,
+        run_task,
+    )
 
     try:
         task = load_task(task_file)
@@ -337,6 +357,38 @@ def eval_cmd(
         typer.echo(f"Error loading task file: {e}", err=True)
         raise typer.Exit(2)
 
+    # Comparison mode: --all-providers or --providers
+    if all_providers or providers:
+        if providers:
+            models = [m.strip() for m in providers.split(",") if m.strip()]
+        else:
+            models = list(DEFAULT_PROVIDER_MODELS)
+
+        async def run_compare():
+            return await run_comparison(
+                task,
+                task_file=task_file,
+                models=models,
+                directory_override=directory,
+            )
+
+        result = asyncio.run(run_compare())
+
+        if pretty:
+            typer.echo(format_comparison_table(result))
+            typer.echo("")
+
+        payload = json.dumps(result.to_dict(), indent=2, default=str)
+
+        if output:
+            output.write_text(payload)
+            typer.echo(f"Report written to {output}")
+        else:
+            typer.echo(payload)
+
+        raise typer.Exit(0 if result.all_passed else 1)
+
+    # Single model mode
     async def run():
         return await run_task(
             task,

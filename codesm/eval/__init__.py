@@ -8,5 +8,20 @@ permission denials, tool errors, wall clock time, and assertion verdict.
 from codesm.eval.task import EvalTask, load_task
 from codesm.eval.metrics import EvalReport
 from codesm.eval.runner import run_task
+from codesm.eval.compare import (
+    ComparisonResult,
+    DEFAULT_PROVIDER_MODELS,
+    format_comparison_table,
+    run_comparison,
+)
 
-__all__ = ["EvalTask", "load_task", "EvalReport", "run_task"]
+__all__ = [
+    "EvalTask",
+    "load_task",
+    "EvalReport",
+    "run_task",
+    "ComparisonResult",
+    "DEFAULT_PROVIDER_MODELS",
+    "format_comparison_table",
+    "run_comparison",
+]
