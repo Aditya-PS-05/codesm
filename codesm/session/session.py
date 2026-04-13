@@ -47,10 +47,16 @@ class Session:
             title=create_default_title(is_child),
         )
         session.save()
-        
-        # Trigger background indexing for new sessions
-        asyncio.create_task(ProjectIndexer(resolved_dir).ensure_index())
-        
+
+        # Trigger background indexing for new sessions. If no event loop
+        # is running (CLI create, tests), skip and let the first async
+        # access pick it up lazily.
+        try:
+            asyncio.get_running_loop()
+            asyncio.create_task(ProjectIndexer(resolved_dir).ensure_index())
+        except RuntimeError:
+            pass
+
         return session
     
     @classmethod
