@@ -9,6 +9,7 @@ from codesm.tool.registry import ToolRegistry
 from codesm.session.session import Session
 from codesm.agent.prompt import SYSTEM_PROMPT, build_system_prompt, format_available_skills
 from codesm.agent.loop import ReActLoop
+from codesm.agent.event_log import EventLogger
 from codesm.mcp import MCPManager, load_mcp_config
 from codesm.skills import SkillManager
 from codesm.rules import RulesDiscovery
@@ -54,6 +55,13 @@ class Agent:
         # loop can record compaction, tool errors, and token usage.
         self._eval_events: list[dict] | None = None
         self._eval_usage: dict | None = None
+
+        # Per session failure mode event log. Writes JSONL to
+        # ~/.local/share/codesm/events/<session_id>.jsonl on every
+        # compaction, tool error, permission denial, malformed tool
+        # call, and max iteration cutoff. Used for real run analysis
+        # and also surfaced in eval reports.
+        self._event_logger: EventLogger = EventLogger(session_id=self.session.id)
 
     @property
     def model(self) -> str:
@@ -137,6 +145,11 @@ class Agent:
             custom_rules=custom_rules,
         )
         
+        # Ensure the event logger matches the current session (the Agent
+        # can be mutated to a new session via new_session()).
+        if self._event_logger.session_id != self.session.id:
+            self._event_logger = EventLogger(session_id=self.session.id)
+
         # Build context for tools
         context = {
             "session": self.session,
@@ -146,6 +159,7 @@ class Agent:
             "tools": self.tools,
             "model": self._model,
             "skills": self.skills,  # Add skills manager to context
+            "event_logger": self._event_logger,
         }
 
         # Propagate eval instrumentation hooks if the runner attached any.

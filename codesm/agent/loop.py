@@ -37,6 +37,16 @@ class ReActLoop:
         # list under this key, we append structured events to it. This is
         # backwards compatible: if the key is absent, nothing happens.
         eval_events = context.get("eval_events")
+        event_logger = context.get("event_logger")
+
+        def _emit(event_type: str, **fields):
+            """Emit a failure mode event to the logger or the in-memory sink."""
+            if event_logger is not None:
+                event_logger.emit(event_type, **fields)
+            if isinstance(eval_events, list):
+                record = {"type": event_type}
+                record.update(fields)
+                eval_events.append(record)
 
         # Get or create ContextManager for compaction
         context_manager = context.get("context_manager")
@@ -46,8 +56,7 @@ class ReActLoop:
         while self.max_iterations == 0 or iteration < self.max_iterations:
             iteration += 1
 
-            if isinstance(eval_events, list):
-                eval_events.append({"type": "iteration_start", "n": iteration})
+            _emit("iteration_start", n=iteration)
 
             # Compact context if needed
             if context_manager.should_compact(current_messages):
@@ -63,13 +72,13 @@ class ReActLoop:
                 tokens_after = context_manager.estimate_tokens(current_messages)
                 logger.info(f"Compacted context from {tokens_before} to {tokens_after} tokens")
 
-                if isinstance(eval_events, list):
-                    eval_events.append({
-                        "type": "compaction",
-                        "iteration": iteration,
-                        "tokens_before": tokens_before,
-                        "tokens_after": tokens_after,
-                    })
+                _emit(
+                    "compaction",
+                    iteration=iteration,
+                    tokens_before=tokens_before,
+                    tokens_after=tokens_after,
+                    tokens_dropped=max(0, tokens_before - tokens_after),
+                )
             
             # Get response from LLM
             response_text = ""
@@ -127,10 +136,29 @@ class ReActLoop:
             for tool_call in tool_calls[:MAX_PARALLEL_CALLS]:  # Cap the number
                 args = tool_call.args
                 if isinstance(args, str):
+                    raw_args = args
                     try:
                         args = json.loads(args)
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
                         args = {}
+                        _emit(
+                            "malformed_tool_call",
+                            iteration=iteration,
+                            tool=tool_call.name,
+                            reason=f"json_decode_error: {e}",
+                            raw=raw_args[:300],
+                        )
+                if tools.get(tool_call.name) is None:
+                    # Unknown tool: the registry will still return an error
+                    # string, but we emit a distinct event so evals can
+                    # distinguish name hallucination from execution errors.
+                    _emit(
+                        "malformed_tool_call",
+                        iteration=iteration,
+                        tool=tool_call.name,
+                        reason="unknown_tool_name",
+                        raw="",
+                    )
                 parsed_calls.append((tool_call.id, tool_call.name, args))
             
             if len(tool_calls) > MAX_PARALLEL_CALLS:
@@ -145,16 +173,30 @@ class ReActLoop:
             # Execute all tools in parallel
             results = await tools.execute_parallel(parsed_calls, context)
 
-            # Emit tool_error events for results that look like errors
-            if isinstance(eval_events, list):
-                for call_id, name, result in results:
-                    if isinstance(result, str) and result.strip().lower().startswith("error"):
-                        eval_events.append({
-                            "type": "tool_error",
-                            "iteration": iteration,
-                            "tool": name,
-                            "message": result[:500],
-                        })
+            # Inspect results for failure mode signals. Tool results are
+            # strings; the tool layer encodes permission denials with a
+            # "Permission denied:" prefix, path/command blocks with
+            # "Error: <reason>", and generic failures by starting the
+            # result with "Error". We emit distinct events per category.
+            for call_id, name, result in results:
+                if not isinstance(result, str):
+                    continue
+                stripped = result.strip()
+                lowered = stripped.lower()
+                if lowered.startswith("permission denied"):
+                    _emit(
+                        "permission_denied",
+                        iteration=iteration,
+                        tool=name,
+                        message=stripped[:300],
+                    )
+                elif lowered.startswith("error"):
+                    _emit(
+                        "tool_error",
+                        iteration=iteration,
+                        tool=name,
+                        message=stripped[:500],
+                    )
 
             # Process results in order
             for call_id, name, result in results:
@@ -186,8 +228,7 @@ class ReActLoop:
                     return  # Stop the loop after handoff
         
         if self.max_iterations > 0 and iteration >= self.max_iterations:
-            if isinstance(eval_events, list):
-                eval_events.append({"type": "max_iterations", "n": iteration})
+            _emit("max_iterations", n=iteration)
             yield StreamChunk(
                 type="text",
                 content="\n\n[Maximum iterations reached - stopping]",

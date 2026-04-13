@@ -78,6 +78,9 @@ class EvalReport:
     # Permission system
     permission_denials: int = 0
 
+    # Malformed tool calls (JSON decode failures, unknown tool names)
+    malformed_tool_calls: int = 0
+
     # Timing
     wall_clock_ms: int = 0
     setup_ms: int = 0

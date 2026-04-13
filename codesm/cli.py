@@ -410,6 +410,8 @@ def eval_cmd(
             typer.echo(f"   tool_errors: {len(report.tool_errors)}")
         if report.permission_denials:
             typer.echo(f"   permission_denials: {report.permission_denials}")
+        if report.malformed_tool_calls:
+            typer.echo(f"   malformed_tool_calls: {report.malformed_tool_calls}")
         for a in report.assertions:
             mark = "OK" if a.passed else "FAIL"
             typer.echo(f"   [{mark}] {a.command}")

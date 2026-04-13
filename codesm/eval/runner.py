@@ -145,16 +145,8 @@ async def run_task(
                 elif ctype == "tool_call":
                     tool_name = cname or "unknown"
                     tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
-                elif ctype == "tool_result":
-                    # Count tool errors by sniffing the result text.
-                    if isinstance(ccontent, str) and ccontent.strip().lower().startswith("error"):
-                        report.tool_errors.append(
-                            ToolErrorEvent(
-                                iteration=0,
-                                tool=cname or "unknown",
-                                message=ccontent[:500],
-                            )
-                        )
+                # tool_result sniffing removed: the ReAct loop now emits
+                # tool_error events directly, drained below.
 
         try:
             await asyncio.wait_for(run_agent(), timeout=task.timeout)
@@ -198,6 +190,8 @@ async def run_task(
             )
         elif kind == "permission_denied":
             report.permission_denials += 1
+        elif kind == "malformed_tool_call":
+            report.malformed_tool_calls += 1
         elif kind == "max_iterations":
             report.max_iterations_hit = True
 
