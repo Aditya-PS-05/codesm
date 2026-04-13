@@ -81,6 +81,14 @@ class EvalReport:
     # Malformed tool calls (JSON decode failures, unknown tool names)
     malformed_tool_calls: int = 0
 
+    # Model self reported uncertainty via the mark_uncertain tool.
+    # The bucket list is so eval reports can measure calibration
+    # (uncertainty rate on passed runs vs failed runs).
+    mark_uncertain_count: int = 0
+    mark_uncertain_by_severity: dict[str, int] = field(
+        default_factory=lambda: {"low": 0, "medium": 0, "high": 0}
+    )
+
     # Timing
     wall_clock_ms: int = 0
     setup_ms: int = 0

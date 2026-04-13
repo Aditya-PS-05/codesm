@@ -54,8 +54,9 @@ class ToolRegistry:
         from .testgen import TestGenTool
         from .bug_localize import BugLocalizeTool
         from .refactor import RefactorTool, RefactorApplyTool
+        from .mark_uncertain import MarkUncertainTool
 
-        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, MultiFileEditTool, BashTool, GitTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, LSPTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, RedoTool, LookAtTool]:
+        for tool_class in [ReadTool, WriteTool, EditTool, MultiEditTool, MultiFileEditTool, BashTool, GitTool, GrepTool, GlobTool, WebFetchTool, WebSearchTool, DiagnosticsTool, LSPTool, CodeSearchTool, TodoTool, ListTool, BatchTool, PatchTool, SkillTool, UndoTool, RedoTool, LookAtTool, MarkUncertainTool]:
             tool = tool_class()
             self._tools[tool.name] = tool
         

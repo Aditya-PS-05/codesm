@@ -192,6 +192,11 @@ async def run_task(
             report.permission_denials += 1
         elif kind == "malformed_tool_call":
             report.malformed_tool_calls += 1
+        elif kind == "mark_uncertain":
+            report.mark_uncertain_count += 1
+            sev = str(ev.get("severity", "")).lower()
+            if sev in report.mark_uncertain_by_severity:
+                report.mark_uncertain_by_severity[sev] += 1
         elif kind == "max_iterations":
             report.max_iterations_hit = True
 

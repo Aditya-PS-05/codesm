@@ -259,6 +259,22 @@ def serve(
     start_server(port=port, directory=directory)
 
 
+@app.command("trace-viewer")
+def trace_viewer(
+    host: str = typer.Option("127.0.0.1", "--host", "-H"),
+    port: int = typer.Option(8765, "--port", "-p"),
+):
+    """Launch the web based session event log viewer.
+
+    Reads JSONL event logs from ~/.local/share/codesm/events/ and
+    renders a per session timeline with failure mode counts. Useful
+    for inspecting real runs during an interview or a post mortem.
+    """
+    from codesm.server.trace_viewer import run
+    typer.echo(f"Trace viewer at http://{host}:{port}/ (Ctrl+C to stop)")
+    run(host=host, port=port)
+
+
 @app.command()
 def init(
     directory: Path = typer.Argument(
@@ -412,6 +428,12 @@ def eval_cmd(
             typer.echo(f"   permission_denials: {report.permission_denials}")
         if report.malformed_tool_calls:
             typer.echo(f"   malformed_tool_calls: {report.malformed_tool_calls}")
+        if report.mark_uncertain_count:
+            sev = report.mark_uncertain_by_severity
+            typer.echo(
+                f"   mark_uncertain: {report.mark_uncertain_count} "
+                f"(low={sev['low']} med={sev['medium']} high={sev['high']})"
+            )
         for a in report.assertions:
             mark = "OK" if a.passed else "FAIL"
             typer.echo(f"   [{mark}] {a.command}")
