@@ -1,6 +1,7 @@
 """LLM-based summarization for conversation context"""
 
 import os
+import re
 import logging
 from datetime import datetime
 
@@ -10,30 +11,122 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-SUMMARY_SYSTEM_PROMPT = """You are summarizing a coding assistant conversation so it can be continued later.
+# The summarizer runs as a one-shot fork that inherits the parent's tool
+# schema. Without an explicit "text only" instruction the model sometimes
+# wastes its only turn on a tool call, producing no summary text. The
+# preamble is placed before the task so it reads as a hard gate and the
+# trailer reinforces it right before the model starts generating.
+_NO_TOOLS_PREAMBLE = """CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
 
-Your goal: Create a concise summary that preserves everything needed to continue the conversation seamlessly.
+- Do NOT use any tool (no file reads, no searches, no edits).
+- All the context you need is in the conversation above.
+- Tool calls will be REJECTED and will waste your only turn.
+- Your entire response must be plain text: an <analysis> block followed by a <summary> block.
 
-PRESERVE:
-- Decisions made and their rationale
-- Technical constraints or requirements discovered
-- File names and paths mentioned or modified
-- Commands run and their outcomes
-- Errors encountered and their solutions (or pending solutions)
-- TODOs and pending tasks
-- Current plan or next steps
-- Key context about the codebase or problem domain
+"""
 
-DO NOT:
-- Invent information not present in the conversation
-- Include generic filler or pleasantries
-- Repeat the same information multiple times
+_NO_TOOLS_TRAILER = (
+    "\n\nREMINDER: Do NOT call any tools. Respond with plain text only — "
+    "an <analysis> block followed by a <summary> block."
+)
 
-FORMAT:
-- Use bullet points for clarity
-- Be concise but complete
-- Group related items together
-- Focus on what would help continue the conversation effectively"""
+# Nine-section structured prompt. The <analysis> block is a drafting
+# scratchpad — format_compact_summary() strips it before the summary lands
+# in the continuing conversation, so the model gets the benefit of
+# chain-of-thought without paying for the tokens downstream.
+_BASE_COMPACT_PROMPT = """Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
+This summary must be thorough enough that a fresh model reading only your summary can continue the work without re-asking the user or re-discovering context.
+
+Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts. In your analysis:
+
+1. Walk the conversation chronologically. For each section identify:
+   - The user's explicit requests and intents
+   - Your approach to each request
+   - Key decisions, technical concepts, and code patterns
+   - Specific details: file names, full code snippets, function signatures, edits
+   - Errors encountered and how they were fixed
+   - Any user feedback, especially corrections or direction changes
+2. Double-check technical accuracy and completeness before writing the final summary.
+
+Your summary must include these nine sections:
+
+1. Primary Request and Intent: All of the user's explicit requests and intents, in detail.
+2. Key Technical Concepts: Technologies, frameworks, and patterns discussed.
+3. Files and Code Sections: Every file examined, modified, or created. Include the reason the file mattered and full code snippets for anything recent or load-bearing.
+4. Errors and Fixes: Each error hit and how it was resolved. Call out user feedback on errors explicitly.
+5. Problem Solving: Problems solved and any troubleshooting still in flight.
+6. All User Messages: Every non-tool-result user message in order. These are critical for tracking shifting intent.
+7. Pending Tasks: Tasks the user explicitly asked for that are not yet done.
+8. Current Work: Exactly what was being worked on immediately before this summary request, with file names and code snippets.
+9. Optional Next Step: The next step directly in line with the most recent request. Include a verbatim quote from the most recent user message showing where work was left off. If the last task concluded cleanly, only list a next step if the user explicitly asked for one.
+
+Structure your output like this:
+
+<analysis>
+[Your chronological walk-through and accuracy check]
+</analysis>
+
+<summary>
+1. Primary Request and Intent:
+   [...]
+
+2. Key Technical Concepts:
+   - [...]
+
+3. Files and Code Sections:
+   - [file]
+     - [why it matters]
+     - [snippet]
+
+4. Errors and Fixes:
+   - [error] -> [fix] -> [user feedback if any]
+
+5. Problem Solving:
+   [...]
+
+6. All User Messages:
+   - [...]
+
+7. Pending Tasks:
+   - [...]
+
+8. Current Work:
+   [...]
+
+9. Optional Next Step:
+   [...]
+</summary>
+
+Be precise and thorough. The next model only sees what you write here."""
+
+SUMMARY_SYSTEM_PROMPT = _NO_TOOLS_PREAMBLE + _BASE_COMPACT_PROMPT + _NO_TOOLS_TRAILER
+
+
+_ANALYSIS_BLOCK_RE = re.compile(r"<analysis>[\s\S]*?</analysis>", re.IGNORECASE)
+_SUMMARY_BLOCK_RE = re.compile(r"<summary>([\s\S]*?)</summary>", re.IGNORECASE)
+_COLLAPSE_BLANK_RE = re.compile(r"\n\n+")
+
+
+def format_compact_summary(summary: str) -> str:
+    """Strip the <analysis> scratchpad and unwrap the <summary> block.
+
+    The model is instructed to emit both <analysis> and <summary>. The
+    analysis section is chain-of-thought drafting that burns tokens in the
+    continuing conversation without adding information once the summary
+    exists, so we drop it. If the model forgets the XML wrappers entirely
+    we fall back to the raw text.
+    """
+    if not summary:
+        return ""
+
+    cleaned = _ANALYSIS_BLOCK_RE.sub("", summary)
+
+    match = _SUMMARY_BLOCK_RE.search(cleaned)
+    if match:
+        cleaned = match.group(1)
+
+    cleaned = _COLLAPSE_BLANK_RE.sub("\n\n", cleaned)
+    return cleaned.strip()
 
 
 def format_messages_for_summary(messages: list[dict]) -> str:
@@ -84,10 +177,16 @@ def format_messages_for_summary(messages: list[dict]) -> str:
 
 
 def create_summary_message(summary_text: str) -> dict:
-    """Create a properly formatted summary message dict."""
+    """Create a properly formatted summary message dict.
+
+    The input may still contain the model's <analysis>/<summary> XML
+    wrappers; format_compact_summary() strips them so the scratchpad never
+    lands back in the continuing conversation.
+    """
+    cleaned = format_compact_summary(summary_text)
     return {
         "role": "system",
-        "content": f"## Previous Conversation Summary\n\n{summary_text}",
+        "content": f"## Previous Conversation Summary\n\n{cleaned}",
         "_context_summary": True,
         "_summary_timestamp": datetime.now().isoformat(),
     }
@@ -254,15 +353,15 @@ async def summarize_messages(
             ):
                 if chunk.type == "text":
                     result += chunk.content
-            return result.strip()
-        
+            return format_compact_summary(result) or _create_fallback_summary(messages)
+
         # Otherwise, find a cheap provider
         provider_type, model_id = await get_summary_provider()
-        
+
         if model:
             # Override model if specified
             model_id = model
-        
+
         if provider_type == "openrouter":
             result = await _summarize_with_openrouter(formatted_text, model_id, max_summary_tokens)
         elif provider_type == "anthropic":
@@ -272,9 +371,9 @@ async def summarize_messages(
         else:
             # No provider available, return fallback
             return _create_fallback_summary(messages)
-        
-        return result.strip() if result else _create_fallback_summary(messages)
-        
+
+        return format_compact_summary(result) or _create_fallback_summary(messages)
+
     except Exception as e:
         logger.warning(f"Summarization failed: {e}")
         return _create_fallback_summary(messages)
