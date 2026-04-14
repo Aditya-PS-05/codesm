@@ -206,10 +206,24 @@ def run(
         "--session", "-s",
         help="Session ID to load (for continuing previous conversations)",
     ),
+    dangerously_skip_permissions: bool = typer.Option(
+        False,
+        "--dangerously-skip-permissions",
+        help="Bypass every permission check: interactive prompts, path guards, and command blocks. Use only in a sandbox or throwaway workspace.",
+    ),
 ):
     """Start the codesm agent"""
     from codesm.tui.app import CodesmApp
     from codesm.auth.credentials import CredentialStore
+
+    if dangerously_skip_permissions:
+        from codesm.permission import set_bypass_all
+        set_bypass_all(True)
+        typer.echo(
+            "WARNING: --dangerously-skip-permissions is active. "
+            "All permission checks are bypassed for this session.",
+            err=True,
+        )
 
     # Use preferred model from config if no model specified
     if model is None:
@@ -225,11 +239,25 @@ def chat(
     message: str = typer.Argument(..., help="Message to send"),
     directory: Path = typer.Option(Path("."), "--dir", "-d"),
     model: str = typer.Option(None, "--model", "-m"),
+    dangerously_skip_permissions: bool = typer.Option(
+        False,
+        "--dangerously-skip-permissions",
+        help="Bypass every permission check: interactive prompts, path guards, and command blocks. Use only in a sandbox or throwaway workspace.",
+    ),
 ):
     """Send a single message (non-interactive)"""
     import asyncio
     from codesm.agent.agent import Agent
     from codesm.auth.credentials import CredentialStore
+
+    if dangerously_skip_permissions:
+        from codesm.permission import set_bypass_all
+        set_bypass_all(True)
+        typer.echo(
+            "WARNING: --dangerously-skip-permissions is active. "
+            "All permission checks are bypassed for this session.",
+            err=True,
+        )
 
     # Use preferred model from config if no model specified
     if model is None:

@@ -10,6 +10,24 @@ from pathlib import Path
 from typing import Callable, Optional
 
 
+# Global bypass flag set by the --dangerously-skip-permissions CLI flag.
+# When True, every entry point in this module (ask, is_command_blocked,
+# is_path_allowed) short circuits to allow. Mirrors claude-code's dev
+# ergonomics flag. The name is intentionally ugly so reviewers notice
+# it in diffs and stack traces.
+_BYPASS_ALL: bool = False
+
+
+def set_bypass_all(enabled: bool) -> None:
+    """Enable or disable the global permission bypass."""
+    global _BYPASS_ALL
+    _BYPASS_ALL = enabled
+
+
+def is_bypass_all() -> bool:
+    return _BYPASS_ALL
+
+
 class PermissionResponse(str, Enum):
     """User's response to a permission request."""
     ALLOW_ONCE = "once"
@@ -135,6 +153,10 @@ class Permission:
     ) -> None:
         import logging
         logger = logging.getLogger(__name__)
+
+        if _BYPASS_ALL:
+            logger.info(f"Permission bypassed (dangerously-skip-permissions): {type}:{command}")
+            return
 
         pattern = f"{type}:{command}"
         logger.info(f"Permission.ask called: session={session_id}, type={type}, pattern={pattern}")
@@ -262,17 +284,20 @@ def is_command_blocked(
     allowlist: Optional[list[str]] = None,
 ) -> tuple[bool, str]:
     """Check if a command is blocked by security rules.
-    
+
     Args:
         command: The command to check
         blocklist: Patterns to block (glob-style)
         allowlist: Patterns to allow (if set, only these are allowed)
-        
+
     Returns:
         (is_blocked, reason)
     """
+    if _BYPASS_ALL:
+        return (False, "")
+
     cmd = command.strip()
-    
+
     # Check default blocked commands first (always blocked)
     for blocked in DEFAULT_BLOCKED_COMMANDS:
         if blocked in cmd or cmd.startswith(blocked):
@@ -311,9 +336,12 @@ def is_path_allowed(
     Returns:
         (is_allowed, reason)
     """
+    if _BYPASS_ALL:
+        return (True, "")
+
     path = Path(path).expanduser().resolve()
     path_str = str(path)
-    
+
     # Expand guarded paths and check
     guards = guarded_paths or DEFAULT_GUARDED_PATHS
     for pattern in guards:
