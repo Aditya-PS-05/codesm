@@ -125,8 +125,9 @@ class OracleTool(Tool):
             subagent = SubAgent(
                 config=oracle_config,
                 directory=Path(workspace_dir),
-                parent_model="openrouter/openai/o1",  # Oracle uses o1
+                parent_model=context.get("model", "smart"),
                 parent_tools=parent_tools,
+                parent_context=context,
             )
             
             result = await subagent.run(prompt)
@@ -135,7 +136,7 @@ class OracleTool(Tool):
             
         except Exception as e:
             logger.exception("Oracle consultation failed")
-            return f"**Oracle Error**\n\nFailed to consult Oracle: {e}"
+            return f"Error: Failed to consult Oracle: {e}"
     
     def _format_result(self, result: str) -> str:
         """Format the Oracle's response"""

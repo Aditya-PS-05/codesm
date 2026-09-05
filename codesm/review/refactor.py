@@ -226,31 +226,9 @@ class RefactorAnalyzer:
         prompt = "".join(prompt_parts)
         
         try:
-            client = self._get_client()
-            
-            response = await client.post(
-                OPENROUTER_URL,
-                json={
-                    "model": REFACTOR_MODEL,
-                    "messages": [
-                        {"role": "system", "content": REFACTOR_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 8192,
-                },
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"API error: {response.status_code} - {response.text}")
-                return RefactorAnalysis(
-                    summary=f"Analysis failed: API error {response.status_code}",
-                    files_analyzed=[f.get("path", "") for f in files],
-                )
-            
-            data = response.json()
-            result_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
+            from codesm.provider.base import complete
+            result_text = await complete(REFACTOR_SYSTEM_PROMPT, prompt)
+
             return self._parse_response(result_text, [f.get("path", "") for f in files])
         
         except Exception as e:

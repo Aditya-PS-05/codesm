@@ -123,7 +123,7 @@ Respond with ONLY valid JSON."""
 class TaskRouter:
     """Routes tasks to optimal models based on complexity analysis"""
     
-    def __init__(self, use_llm: bool = True):
+    def __init__(self, use_llm: bool = False):
         self.use_llm = use_llm
         self._cache: dict[str, RoutingDecision] = {}
     
@@ -307,7 +307,16 @@ def get_router() -> TaskRouter:
 
 async def route_task(task: str, context: str = "") -> RoutingDecision:
     """Convenience function to route a task"""
-    return await get_router().analyze(task, context)
+    decision = await get_router().analyze(task, context)
+    from codesm.agent.execution import current_context
+    execution = current_context.get() or {}
+    config = execution.get("config")
+    if config:
+        profile = config.agents.get(decision.recommended_subagent)
+        decision.recommended_model = ((profile.model if profile else None)
+            or config.routing_models.get(decision.complexity.value)
+            or execution.get("model", config.model))
+    return decision
 
 
 def route_task_sync(task: str) -> RoutingDecision:

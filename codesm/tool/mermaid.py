@@ -289,7 +289,7 @@ class DiagramGeneratorTool(Tool):
         }
     
     async def execute(self, args: dict, context: dict) -> str:
-        from codesm.provider.base import get_provider
+        from codesm.provider.base import complete
         
         diagram_type = args.get("type", "architecture")
         scope = args.get("scope", "")
@@ -308,7 +308,6 @@ class DiagramGeneratorTool(Tool):
         
         # Use LLM to generate diagram
         try:
-            provider = get_provider("diagram")  # Gemini Flash for speed
             
             system_prompt = self._get_system_prompt(diagram_type, include_details)
             user_prompt = f"""Generate a Mermaid {diagram_type} diagram for the following code:
@@ -320,15 +319,8 @@ Code Context:
 
 Generate ONLY the Mermaid code, no explanation. Include file:// links in comments for key nodes."""
             
-            response_text = ""
-            async for chunk in provider.stream(
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=None,
-            ):
-                if chunk.type == "text":
-                    response_text += chunk.content
-            
+            response_text = await complete(system_prompt, user_prompt, model="diagram")
+
             # Clean and format the response
             mermaid_code = self._extract_mermaid(response_text)
             

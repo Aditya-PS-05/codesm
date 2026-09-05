@@ -36,9 +36,9 @@ classifiers = [
 ]
 dependencies = [
     "anthropic>=0.40.0",
-    "openai>=1.54.0",
+    "openai>=2.14.0",
     "ollama>=0.4.0",
-    "textual>=0.90.0",
+    "textual>=6.11.0",
     "typer>=0.15.0",
     "pydantic>=2.10.0",
     "httpx>=0.28.0",

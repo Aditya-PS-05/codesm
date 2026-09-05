@@ -1,6 +1,7 @@
 """Subagent Orchestrator - manages spawning, lifecycle, and coordination of subagents"""
 
 import asyncio
+from contextlib import aclosing
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -107,6 +108,8 @@ class SubAgentOrchestrator:
         max_concurrent: int = 5,
     ):
         self.directory = Path(directory).resolve()
+        from codesm.agent.execution import current_context
+        self.parent_context = current_context.get() or {}
         self.parent_tools = parent_tools
         self.parent_model = parent_model
         self.max_concurrent = max_concurrent
@@ -150,7 +153,10 @@ class SubAgentOrchestrator:
         
         try:
             # Auto-route if needed
+            decision = None
             subagent_type = task.subagent_type
+            if subagent_type == "auto" and getattr(self.parent_context.get("config"), "delegation", "adaptive") == "specialists":
+                raise ValueError("Specialists mode requires an explicit subagent type")
             if subagent_type == "auto":
                 try:
                     decision = await route_task(task.prompt)
@@ -168,6 +174,8 @@ class SubAgentOrchestrator:
                 directory=self.directory,
                 parent_model=self.parent_model,
                 parent_tools=self.parent_tools,
+                parent_context=self.parent_context,
+                model_override=decision.recommended_model if decision else None,
             )
             
             # Run with semaphore to limit concurrency
@@ -183,7 +191,7 @@ class SubAgentOrchestrator:
             
             return result
             
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, GeneratorExit):
             task.status = SubAgentStatus.CANCELLED
             task.completed_at = datetime.now()
             raise
@@ -211,7 +219,10 @@ class SubAgentOrchestrator:
             self._on_task_start(task)
         
         try:
+            decision = None
             subagent_type = task.subagent_type
+            if subagent_type == "auto" and getattr(self.parent_context.get("config"), "delegation", "adaptive") == "specialists":
+                raise ValueError("Specialists mode requires an explicit subagent type")
             if subagent_type == "auto":
                 try:
                     decision = await route_task(task.prompt)
@@ -228,17 +239,25 @@ class SubAgentOrchestrator:
                 directory=self.directory,
                 parent_model=self.parent_model,
                 parent_tools=self.parent_tools,
+                parent_context=self.parent_context,
+                model_override=decision.recommended_model if decision else None,
             )
             
             full_response = ""
+            status = "running"
             async with self._semaphore:
-                async for chunk in subagent.run_streaming(task.prompt):
-                    if chunk.type == "text":
-                        full_response += chunk.content
-                    elif chunk.type == "tool_result":
-                        task.tools_used.append(chunk.name)
-                    yield chunk
-            
+                async with aclosing(subagent.run_streaming(task.prompt)) as stream:
+                    async for chunk in stream:
+                        if chunk.type == "text":
+                            full_response += chunk.content
+                        elif chunk.type == "tool_result":
+                            task.tools_used.append(chunk.name)
+                        elif chunk.type == "run_status":
+                            status = chunk.content
+                        yield chunk
+            if status not in ("completed", "verified"):
+                raise RuntimeError(f"Subagent ended {status}")
+
             task.result = full_response
             task.status = SubAgentStatus.COMPLETED
             task.completed_at = datetime.now()
@@ -246,7 +265,7 @@ class SubAgentOrchestrator:
             if self._on_task_complete:
                 self._on_task_complete(task)
                 
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, GeneratorExit):
             task.status = SubAgentStatus.CANCELLED
             task.completed_at = datetime.now()
             raise
@@ -278,7 +297,14 @@ class SubAgentOrchestrator:
             return task
         
         # Run all tasks concurrently
-        await asyncio.gather(*[run_one(t) for t in tasks], return_exceptions=not fail_fast)
+        workers = [asyncio.create_task(run_one(t)) for t in tasks]
+        try:
+            await asyncio.gather(*workers, return_exceptions=not fail_fast)
+        finally:
+            for worker in workers:
+                if not worker.done():
+                    worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
         
         return tasks
     
@@ -294,14 +320,15 @@ class SubAgentOrchestrator:
             # Wait for dependencies
             group_tasks = [t for t in plan.tasks if t.id in group]
             
-            # Check dependencies are met
+            ready = []
             for task in group_tasks:
-                deps = plan.dependencies.get(task.id, [])
-                for dep_id in deps:
-                    if dep_id not in completed:
-                        # Wait for dependency (shouldn't happen with proper plan)
-                        logger.warning(f"Task {task.id} waiting for unmet dependency {dep_id}")
-            
+                if any(dep not in completed for dep in plan.dependencies.get(task.id, [])):
+                    task.status = SubAgentStatus.CANCELLED
+                    task.error = "Skipped: a dependency did not complete"
+                else:
+                    ready.append(task)
+            group_tasks = ready
+
             # Execute group in parallel
             await self.spawn_parallel(group_tasks, fail_fast=fail_fast)
             
@@ -325,7 +352,7 @@ class SubAgentOrchestrator:
             async_task.cancel()
             try:
                 await async_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, GeneratorExit):
                 pass
             del self._running_tasks[task_id]
             

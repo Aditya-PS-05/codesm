@@ -34,7 +34,7 @@ class WriteTool(Tool):
         import time
         start_time = time.time()
         
-        path = Path(args["path"])
+        path = Path(context.get("cwd", ".")) / Path(args["path"]).expanduser()
         content = args["content"]
         dry_run = args.get("dry_run", False)
         
@@ -43,7 +43,7 @@ class WriteTool(Tool):
             dry_run = True
         
         session = context.get("session")
-        session_id = session.id if session else "default"
+        session_id = session.id if session else context.get("session_id", "default")
         
         # Audit log the tool call
         try:
@@ -119,8 +119,8 @@ class WriteTool(Tool):
                     return f"Write skipped by user: {path.name}"
                 except DiffPreviewCancelledError:
                     return f"Write cancelled by user"
-                except Exception:
-                    pass  # If diff preview fails, proceed anyway
+                except Exception as error:
+                    return f"Error: Could not confirm edit: {error}"
             
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)

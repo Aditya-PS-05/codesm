@@ -70,23 +70,6 @@ class CodeReviewTool(Tool):
             "required": [],
         }
     
-    def _get_client(self) -> httpx.AsyncClient:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not set")
-        
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=120.0,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://github.com/Aditya-PS-05",
-                    "X-Title": "codesm-code-review",
-                },
-            )
-        return self._client
-    
     async def execute(self, args: dict, context: dict) -> str:
         mode = args.get("mode", "staged")
         base_branch = args.get("base_branch")
@@ -164,23 +147,6 @@ class CodeReviewTool(Tool):
         if len(diff) > 50000:
             diff = diff[:50000] + "\n... (truncated)"
         
-        client = self._get_client()
         
-        response = await client.post(
-            OPENROUTER_URL,
-            json={
-                "model": REVIEW_MODEL,
-                "messages": [
-                    {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Review this diff:\n\n```diff\n{diff}\n```"},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 4096,
-            },
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"API error: {response.status_code}")
-        
-        data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "No response")
+        from codesm.provider.base import complete
+        return await complete(REVIEW_SYSTEM_PROMPT, f"Review this diff:\n\n```diff\n{diff}\n```")

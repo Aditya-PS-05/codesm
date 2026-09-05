@@ -2,6 +2,9 @@
 
 import asyncio
 import json
+import logging
+import sqlite3
+from copy import deepcopy
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,6 +27,15 @@ class Session:
     directory: Path
     title: str = field(default_factory=create_default_title)
     messages: list[dict] = field(default_factory=list)
+    debug_state: dict = field(default_factory=dict)
+    agent_runs: dict = field(default_factory=dict)
+    usage_records: list[dict] = field(default_factory=list)
+    context_messages: list[dict] = field(default_factory=list)
+    context_message_count: int = 0
+    last_model: str = ""
+    run_state: dict = field(default_factory=dict)
+    pending_response: dict = field(default_factory=dict)
+    file_state: dict = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     topics: Optional[dict] = field(default=None, repr=False)  # TopicInfo as dict
@@ -48,15 +60,6 @@ class Session:
         )
         session.save()
 
-        # Trigger background indexing for new sessions. If no event loop
-        # is running (CLI create, tests), skip and let the first async
-        # access pick it up lazily.
-        try:
-            asyncio.get_running_loop()
-            asyncio.create_task(ProjectIndexer(resolved_dir).ensure_index())
-        except RuntimeError:
-            pass
-
         return session
     
     @classmethod
@@ -67,13 +70,30 @@ class Session:
             return None
         title = data.get("title", "New Session")
         messages = data.get("messages", [])
+        if data.get("pending_response", {}).get("content"):
+            messages.append(data["pending_response"])
+        run_state = data.get("run_state", {})
+        if run_state.get("status") == "running":
+            run_state = {**run_state, "status": "interrupted"}
         # If session has messages, title was already generated
         has_user_message = any(m.get("role") == "user" for m in messages)
+        runs = data.get("agent_runs", {})
+        for run in runs.values():
+            if run.get("status") in ("waiting", "running"):
+                run["status"] = "interrupted"
         return cls(
             id=data["id"],
             directory=Path(data["directory"]),
             title=title,
             messages=messages,
+            debug_state=data.get("debug_state", {}),
+            agent_runs=runs,
+            usage_records=data.get("usage_records", []),
+            context_messages=data.get("context_messages", []),
+            context_message_count=data.get("context_message_count", 0),
+            last_model=data.get("last_model", ""),
+            run_state=run_state,
+            file_state=data.get("file_state", {}),
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
             parent_id=data.get("parent_id"),
@@ -123,6 +143,15 @@ class Session:
             "directory": str(self.directory),
             "title": self.title,
             "messages": self.messages,
+            "debug_state": self.debug_state,
+            "agent_runs": self.agent_runs,
+            "usage_records": self.usage_records,
+            "context_messages": self.context_messages,
+            "context_message_count": self.context_message_count,
+            "last_model": self.last_model,
+            "run_state": self.run_state,
+            "pending_response": self.pending_response,
+            "file_state": self.file_state,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -134,6 +163,24 @@ class Session:
         if self.branch_name:
             data["branch_name"] = self.branch_name
         Storage.write(["session", self.id], data)
+        try:
+            from codesm.memory.history import HistoryStore
+            HistoryStore().sync_session(data)
+        except (OSError, sqlite3.Error) as error:
+            logging.getLogger(__name__).warning("History index unavailable; session JSON is saved: %s", error)
+
+    def save_context(self, messages: list[dict]):
+        """Checkpoint compact working context without discarding the original transcript."""
+        self.context_messages = deepcopy(messages)
+        self.context_message_count = len(self.messages)
+        self.save()
+
+    def commit_pending_response(self):
+        """Retain visible partial text before an interrupted turn can be resumed."""
+        partial = self.pending_response
+        self.pending_response = {}
+        if partial.get("content"):
+            self.add_message(**partial)
     
     def add_message(self, role: str, content: str | None = None, **kwargs):
         """Add a message to the session, preserving all metadata"""
@@ -152,24 +199,40 @@ class Session:
         
         self.save()
         
-        # Auto-index topics after a few messages (async, non-blocking)
-        user_count = sum(1 for m in self.messages if m.get("role") == "user")
-        if user_count == 3 and not self.topics:
-            import asyncio
-            asyncio.create_task(self._auto_index_topics())
-    
     def get_messages(self) -> list[dict]:
-        """Get all messages for LLM context (user/assistant only, no tool messages)"""
-        # Filter out tool messages - they're ephemeral within a turn
-        # Also filter out assistant messages with tool_calls (intermediate steps)
+        """Return valid model history, repairing incomplete tool groups after a crash."""
         result = []
-        for m in self.messages:
+        pending = {}
+        completed = {}
+
+        def flush():
+            for call_id in pending:
+                result.append(completed.get(call_id, {
+                    "role": "tool", "tool_call_id": call_id,
+                    "content": "Interrupted: the outcome of this call is unknown. Inspect current state before retrying; it may already have changed files or external state.",
+                }))
+            pending.clear()
+            completed.clear()
+
+        source = self.messages
+        if self.context_messages and 0 <= self.context_message_count <= len(self.messages):
+            source = self.context_messages + self.messages[self.context_message_count:]
+        for m in source:
             role = m.get("role")
             if role == "tool":
+                if m.get("tool_call_id") in pending:
+                    completed[m["tool_call_id"]] = m
                 continue
-            if role == "assistant" and m.get("tool_calls"):
+            if role == "system":
+                flush()
+                result.append(m)
                 continue
+            if role not in ("user", "assistant"):
+                continue
+            flush()
             result.append(m)
+            pending.update({tc["id"]: tc for tc in m.get("tool_calls", [])})
+        flush()
         return result
     
     def get_messages_for_display(self) -> list[dict]:
@@ -224,11 +287,24 @@ class Session:
     def clear(self):
         """Clear all messages"""
         self.messages = []
+        self.title = create_default_title()
+        self._title_generated = False
+        self.debug_state = {}
+        self.agent_runs = {}
+        self.context_messages = []
+        self.context_message_count = 0
+        self.run_state = {}
+        self.pending_response = {}
+        self.file_state = {}
+        from codesm.memory.history import HistoryStore
+        HistoryStore().delete_session(self.id)
+        Storage.delete(["todo", self.id])
+        (Storage.BASE_DIR / "events" / f"{self.id}.jsonl").unlink(missing_ok=True)
         self.save()
 
     def delete(self):
         """Delete this session from storage"""
-        Storage.delete(["session", self.id])
+        self.delete_by_id(self.id)
     
     def fork(self, at_message: Optional[int] = None, branch_name: Optional[str] = None) -> "Session":
         """Fork this session to explore an alternative path.
@@ -246,7 +322,7 @@ class Session:
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         
         # Copy messages up to fork point
-        forked_messages = self.messages[:fork_point].copy()
+        forked_messages = deepcopy(self.messages[:fork_point])
         
         # Generate branch name if not provided
         if not branch_name:
@@ -262,8 +338,17 @@ class Session:
             branch_point=fork_point,
             branch_name=branch_name,
             _title_generated=True,  # Preserve parent's title
+            last_model=self.last_model,
+            debug_state=deepcopy(self.debug_state) if fork_point == len(self.messages) else {},
+            agent_runs=deepcopy(self.agent_runs) if fork_point == len(self.messages) else {},
+            context_messages=deepcopy(self.context_messages) if fork_point == len(self.messages) else [],
+            context_message_count=self.context_message_count if fork_point == len(self.messages) else 0,
+            file_state=deepcopy(self.file_state) if fork_point == len(self.messages) else {},
         )
         forked.save()
+        if fork_point == len(self.messages):
+            todos = Storage.read(["todo", self.id]) or []
+            Storage.write(["todo", forked.id], [{**todo, "session_id": forked.id} for todo in todos])
         return forked
     
     def list_branches(self) -> list[dict]:
@@ -296,7 +381,11 @@ class Session:
     def delete_by_id(cls, session_id: str) -> bool:
         """Delete a session by ID"""
         try:
+            from codesm.memory.history import HistoryStore
+            HistoryStore().delete_session(session_id)
             Storage.delete(["session", session_id])
+            Storage.delete(["todo", session_id])
+            (Storage.BASE_DIR / "events" / f"{session_id}.jsonl").unlink(missing_ok=True)
             return True
         except Exception:
             return False

@@ -1,210 +1,113 @@
 ---
 title: Providers
-description: Configure LLM providers for codesm.
+description: Connect current coding models from OpenAI, Anthropic, Kimi, GLM, and other providers.
 ---
 
-codesm supports multiple LLM providers out of the box.
+Use `codesm run --model provider/model-id` with a provider API key, or open
+`/connect` in the TUI. Each provider uses its own credential; an OpenAI key is not
+used for Kimi, GLM, or another service.
 
----
+## Built-in providers
 
-## Supported Providers
+These coding/chat model examples were checked against official catalogs on
+September 5, 2026. Model access depends on your account and endpoint. Use
+`codesm models --refresh --provider openai` (or another provider) for the current
+catalog. The built-in list is a starting point, not an allowlist.
 
-| Provider | Models | Notes |
-|----------|--------|-------|
-| **Anthropic** | Claude 4, Claude 3.5 | Recommended for coding |
-| **OpenAI** | GPT-4.1, GPT-4o, o1 | Good general purpose |
-| **OpenRouter** | 100+ models | Pay-per-use, multi-provider |
-| **Ollama** | Llama, Codestral, etc. | Local, free, private |
-| **Google** | Gemini 2.5 Pro/Flash | Fast, large context |
+| Provider prefix | Example model IDs | Credential environment variable | Official catalog |
+| --- | --- | --- | --- |
+| `openai` | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | `OPENAI_API_KEY` | [OpenAI models](https://developers.openai.com/api/docs/models) |
+| `anthropic` | `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` | [Claude models](https://platform.claude.com/docs/en/models/overview) |
+| `kimi` (also `moonshot`) | `kimi-k3`, `kimi-k2.7-code`, `kimi-k2.7-code-highspeed`, `kimi-k2.6` | `MOONSHOT_API_KEY` (or `KIMI_API_KEY`) | [Kimi models](https://platform.kimi.ai/docs/models) |
+| `zai` (also `glm`) | `glm-5.3`, `glm-5.3-flash`, `glm-5.2` | `ZAI_API_KEY` (or `GLM_API_KEY`) | [Z.ai models](https://docs.z.ai/guides/overview/overview) |
+| `google` (also `gemini`) | `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro-preview` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | [Gemini API compatibility](https://ai.google.dev/gemini-api/docs/openai) |
+| `deepseek` | `deepseek-v4-pro`, `deepseek-v4-flash` | `DEEPSEEK_API_KEY` | [DeepSeek API](https://api-docs.deepseek.com/) |
+| `xai` | `grok-4.6`, `grok-4.5`, `grok-build-0.1` | `XAI_API_KEY` | [xAI models](https://docs.x.ai/developers/pricing) |
+| `mistral` | `mistral-medium-3-5`, `mistral-small-latest`, `mistral-large-latest` | `MISTRAL_API_KEY` | [Mistral models](https://docs.mistral.ai/models) |
+| `openrouter` | `moonshotai/kimi-k3`, `z-ai/glm-5.3`, and hundreds more | `OPENROUTER_API_KEY` | [OpenRouter catalog](https://openrouter.ai/docs/guides/overview/models) |
+| `ollama` | Any locally installed chat/tool model | None for local Ollama | [Ollama models](https://ollama.com/library) |
 
----
+A model appearing in a catalog does not guarantee your key has access. For example,
+GPT-6 Astra is initially rolling out through OpenAI's Trusted Access Program.
+[OpenAI's current model guidance](https://developers.openai.com/api/docs/guides/latest-model)
+describes its rollout and supported request parameters.
 
-## Anthropic
-
-The recommended provider for coding tasks.
-
-### Setup
+## Examples
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-api03-..."
+export MOONSHOT_API_KEY="your-key"
+codesm run --model kimi/kimi-k3
 ```
-
-### Config
-
-```json title="codesm.json"
-{
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-20250514"
-}
-```
-
-### Available Models
-
-| Model | Best For |
-|-------|----------|
-| `claude-sonnet-4-20250514` | Complex coding tasks |
-| `claude-3-5-sonnet-20241022` | General coding |
-| `claude-3-5-haiku-20241022` | Fast, simple tasks |
-
----
-
-## OpenAI
-
-### Setup
 
 ```bash
-export OPENAI_API_KEY="sk-..."
+export ZAI_API_KEY="your-key"
+codesm debug "Reproduce and fix the failing test" --model zai/glm-5.3
 ```
-
-### Config
-
-```json title="codesm.json"
-{
-  "provider": "openai",
-  "model": "gpt-4.1"
-}
-```
-
-### Available Models
-
-| Model | Best For |
-|-------|----------|
-| `gpt-4.1` | Latest, best quality |
-| `gpt-4o` | Fast, good quality |
-| `gpt-4o-mini` | Fast, economical |
-| `o1` | Deep reasoning, complex problems |
-| `o1-mini` | Reasoning, economical |
-
----
-
-## Google
-
-### Setup
 
 ```bash
-export GOOGLE_API_KEY="..."
+export OPENROUTER_API_KEY="your-key"
+codesm run --model openrouter/moonshotai/kimi-k3
+codesm models --refresh --provider openrouter
 ```
 
-### Config
+OpenRouter discovery filters for tool support and excludes batch-only variants.
+It also provides access to other families, including Qwen, MiniMax, and Llama,
+without a separate codesm integration. Copy the exact ID from `codesm models`.
+
+## Endpoint overrides and coding plans
+
+Z.ai's Coding Plan uses a different endpoint from its standard API:
 
 ```json title="codesm.json"
 {
-  "provider": "google",
-  "model": "gemini-2.5-pro"
-}
-```
-
-### Available Models
-
-| Model | Best For |
-|-------|----------|
-| `gemini-2.5-pro` | Complex reasoning, large context |
-| `gemini-2.5-flash` | Fast responses, code search |
-| `gemini-2.0-flash` | Quick tasks, media analysis |
-
----
-
-## OpenRouter
-
-Access 100+ models through a single API.
-
-### Setup
-
-```bash
-export OPENROUTER_API_KEY="sk-or-..."
-```
-
-### Config
-
-```json title="codesm.json"
-{
-  "provider": "openrouter",
-  "model": "anthropic/claude-sonnet-4-20250514"
-}
-```
-
-### Popular Models
-
-| Model | Provider |
-|-------|----------|
-| `anthropic/claude-sonnet-4-20250514` | Anthropic |
-| `openai/gpt-4.1` | OpenAI |
-| `google/gemini-2.5-pro` | Google |
-| `deepseek/deepseek-coder` | DeepSeek |
-
----
-
-## Ollama (Local)
-
-Run models locally for privacy and cost savings.
-
-### Setup
-
-1. Install Ollama from [ollama.ai](https://ollama.ai)
-2. Pull a model:
-   ```bash
-   ollama pull codestral
-   ```
-
-### Config
-
-```json title="codesm.json"
-{
-  "provider": "ollama",
-  "model": "codestral"
-}
-```
-
-### Recommended Models
-
-| Model | Size | Best For |
-|-------|------|----------|
-| `codestral` | 22B | Code generation |
-| `llama3.1:70b` | 70B | Complex reasoning |
-| `llama3.1:8b` | 8B | Fast responses |
-| `deepseek-coder:33b` | 33B | Code understanding |
-
----
-
-## Switching Providers
-
-### Command Line
-
-```bash
-codesm --provider openai --model gpt-4.1
-```
-
-### In TUI
-
-Use the `/models` command to switch models:
-
-```txt frame="none"
-/models
-```
-
-Or set temporarily in your message:
-
-```txt frame="none"
-Using gpt-4.1: Explain this algorithm
-```
-
----
-
-## Cost Tracking
-
-codesm tracks token usage and estimated costs:
-
-```txt frame="none"
-Session: 45,231 tokens (~$0.32)
-```
-
-Set spending limits in config:
-
-```json title="codesm.json"
-{
-  "limits": {
-    "session_max_cost": 5.00,
-    "daily_max_cost": 20.00
+  "model": "zai/glm-5.3",
+  "providers": {
+    "zai": {
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "api_key_env": "ZAI_API_KEY",
+      "options": {
+        "extra_body": {"thinking": {"type": "enabled", "clear_thinking": false}}
+      }
+    }
   }
 }
 ```
+
+See the [Z.ai endpoint guide](https://docs.z.ai/api-reference/introduction) and
+[preserved thinking documentation](https://docs.z.ai/guides/capabilities/thinking-mode).
+If an endpoint does not expose a models API, enter its model ID directly or add it
+to `providers.zai.models`.
+
+## Other OpenAI-compatible endpoints
+
+No plugin is required for an additional compatible provider:
+
+```json title="codesm.json"
+{
+  "model": "company/my-coding-model",
+  "providers": {
+    "company": {
+      "base_url": "https://your-endpoint.example/v1",
+      "api_key_env": "COMPANY_API_KEY",
+      "models": ["my-coding-model"]
+    }
+  }
+}
+```
+
+Then run `codesm run` or `codesm run --model company/another-model`.
+Compatible endpoints use Chat Completions by default. A compatible Responses
+endpoint can opt into `options.api: "responses"`. Azure's distinct deployment and
+API-version authentication scheme is not automatically configured by this option.
+
+## Reasoning and tool history
+
+Codesm retains native OpenAI response items, Anthropic thinking signatures, Kimi/
+GLM/DeepSeek reasoning content, Gemini tool signatures, OpenRouter reasoning
+metadata, and Mistral thinking blocks across tool calls. These fields are scoped
+to their originating provider and model. Thinking is never printed as the answer.
+
+Keep reasoning effort unset to use a provider's default, or select a supported
+value in the [role profile](/config). The accepted values differ by model; for
+example, Kimi K3 accepts `low`, `high`, or `max`, whereas Mistral's current reasoning
+models accept `high` or `none`. Codesm does not silently increase output budgets.

@@ -1,10 +1,8 @@
 name: "ambiguous-requirements"
 description: "Deliberately vague prompt. Success is asking for clarification, not guessing."
 
-directory: /tmp/codesm-eval-vague
 
-setup:
-  - find . -mindepth 1 -delete || true
+setup: []
 
 prompt: |
   Add a feature to the code.

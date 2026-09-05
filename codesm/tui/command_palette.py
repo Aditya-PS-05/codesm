@@ -2,9 +2,10 @@
 
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static, Input
 from textual.binding import Binding
+from rich.text import Text
 
 
 COMMANDS = [
@@ -21,6 +22,7 @@ COMMANDS = [
     {"cmd": "/agents", "desc": "list agents"},
     {"cmd": "/session", "desc": "list sessions"},
     {"cmd": "/status", "desc": "show status"},
+    {"cmd": "/debug", "desc": "reproduce and verify a bug"},
     {"cmd": "/cost", "desc": "show cost/usage stats"},
     {"cmd": "/theme", "desc": "toggle theme"},
     {"cmd": "/editor", "desc": "open editor"},
@@ -38,12 +40,16 @@ class CommandItem(Static):
         self.desc = desc
         self._selected = False
 
-    def render(self) -> str:
-        return f"[bold]{self.cmd:<12}[/] [dim]{self.desc}[/]"
+    def render(self) -> Text:
+        text = Text("› " if self._selected else "  ", no_wrap=True, overflow="ellipsis")
+        text.append(f"{self.cmd:<12}", style="bold")
+        text.append(f" {self.desc}", style="dim")
+        return text
 
     def set_selected(self, selected: bool):
         self._selected = selected
         self.set_class(selected, "-selected")
+        self.refresh()
 
 
 class CommandPaletteModal(ModalScreen):
@@ -51,24 +57,29 @@ class CommandPaletteModal(ModalScreen):
 
     CSS = """
     CommandPaletteModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #palette-container {
-        width: 60;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
         height: auto;
-        max-height: 80%;
+        max-height: 100%;
         background: $surface;
-        border: tall $primary;
+        border: round $panel;
         padding: 0 1;
     }
 
     #palette-input {
         width: 100%;
+        height: 1;
         border: none;
-        background: $surface;
-        margin: 1 0;
+        background: $panel;
+        padding: 0 1;
+        margin: 0 0 1 0;
     }
 
     #palette-input:focus {
@@ -77,8 +88,9 @@ class CommandPaletteModal(ModalScreen):
 
     #commands-list {
         height: auto;
-        max-height: 15;
+        max-height: 45vh;
         padding: 0;
+        scrollbar-size: 1 1;
     }
 
     CommandItem {
@@ -87,15 +99,27 @@ class CommandPaletteModal(ModalScreen):
     }
 
     CommandItem.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
+        text-style: bold;
+    }
+
+    CommandItem.-selected:ansi {
+        text-style: bold reverse;
+    }
+
+    #palette-hint {
+        height: auto;
+        color: $text-muted;
+        margin-top: 1;
     }
     """
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
+        Binding("enter", "select", "Run", show=False, priority=True),
     ]
 
     def __init__(self, initial_text: str = "/"):
@@ -107,24 +131,34 @@ class CommandPaletteModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="palette-container"):
             yield Input(value=self.initial_text, id="palette-input")
-            with Vertical(id="commands-list"):
+            with VerticalScroll(id="commands-list"):
                 for cmd_info in COMMANDS:
                     yield CommandItem(cmd_info["cmd"], cmd_info["desc"])
+            yield Static("↑↓ select · enter run · esc close", id="palette-hint")
 
     def on_mount(self):
-        self._refresh_items()
+        self._refresh_items(self.initial_text)
         input_widget = self.query_one("#palette-input", Input)
         input_widget.cursor_position = len(self.initial_text)
         input_widget.focus()
 
     def _refresh_items(self, filter_text: str = "/"):
-        """Refresh the visible items based on filter"""
+        """Rank command-name matches before description matches."""
         self.visible_items = []
         filter_lower = filter_text.lower().lstrip("/")
 
+        def match_rank(item: CommandItem):
+            name = item.cmd.lower().lstrip("/")
+            return (name != filter_lower, not name.startswith(filter_lower), filter_lower not in name)
+
+        listing = self.query_one("#commands-list", VerticalScroll)
+        # Reset to construction order so ties and clearing the filter stay stable.
+        listing.sort_children()
+        listing.sort_children(key=match_rank)
+
         for item in self.query(CommandItem):
             cmd_lower = item.cmd.lower().lstrip("/")
-            if not filter_text or filter_text == "/" or filter_lower in cmd_lower or filter_lower in item.desc.lower():
+            if filter_lower in cmd_lower or filter_lower in item.desc.lower():
                 item.display = True
                 self.visible_items.append(item)
             else:
@@ -138,6 +172,8 @@ class CommandPaletteModal(ModalScreen):
         """Update visual selection"""
         for i, item in enumerate(self.visible_items):
             item.set_selected(i == self.selected_index)
+        if self.visible_items:
+            self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
 
     def on_input_changed(self, event: Input.Changed):
         if event.input.id == "palette-input":
@@ -158,6 +194,9 @@ class CommandPaletteModal(ModalScreen):
             self.dismiss(selected.cmd)
         else:
             self.dismiss(None)
+
+    async def action_select(self):
+        await self._select_current()
 
     def action_move_up(self):
         if self.visible_items:

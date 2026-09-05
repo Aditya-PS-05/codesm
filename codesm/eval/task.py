@@ -44,6 +44,8 @@ class EvalTask:
     directory: Optional[str] = None
     max_iterations: int = 20
     timeout: int = 300
+    debug: bool = False
+    protected_files: list[str] = field(default_factory=list)
 
 
 def load_task(path: Path) -> EvalTask:
@@ -78,6 +80,15 @@ def load_task(path: Path) -> EvalTask:
     if isinstance(assertion, str):
         assertion = [assertion]
 
+    if not isinstance(setup, list) or not isinstance(assertion, list):
+        raise ValueError("setup and assertion must be lists of shell commands")
+    if not assertion:
+        raise ValueError("At least one assertion is required for an evaluation")
+    if int(data.get("timeout", 300)) < 1 or int(data.get("max_iterations", 20)) < 1:
+        raise ValueError("timeout and max_iterations must be positive")
+    directory = data.get("directory")
+    if directory and not Path(directory).is_absolute():
+        directory = str((path.parent / directory).resolve())
     return EvalTask(
         name=str(data["name"]),
         description=str(data.get("description", "")),
@@ -85,7 +96,9 @@ def load_task(path: Path) -> EvalTask:
         setup=[str(s) for s in setup],
         assertion=[str(a) for a in assertion],
         model=data.get("model"),
-        directory=data.get("directory"),
+        directory=directory,
         max_iterations=int(data.get("max_iterations", 20)),
         timeout=int(data.get("timeout", 300)),
+        debug=bool(data.get("debug", False)),
+        protected_files=list(data.get("protected_files", [])),
     )

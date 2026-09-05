@@ -61,7 +61,7 @@ class LookAtTool(Tool):
         }
     
     async def execute(self, args: dict, context: dict) -> str:
-        path = Path(args["path"])
+        path = Path(context.get("cwd", ".")) / Path(args["path"]).expanduser()
         objective = args["objective"]
         analysis_context = args.get("context", "")
         
@@ -73,11 +73,8 @@ class LookAtTool(Tool):
         
         ext = path.suffix.lower()
         
-        # Check if we have an API key
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            return "Error: OPENROUTER_API_KEY not set. Required for image/PDF analysis."
-        
+        api_key = ""  # Provider authentication is resolved by the shared runtime.
+
         # Handle different file types
         if ext in IMAGE_EXTENSIONS:
             return await self._analyze_image(path, objective, analysis_context, api_key)
@@ -100,49 +97,13 @@ class LookAtTool(Tool):
             # Build the prompt
             prompt = self._build_analysis_prompt(objective, context, path.name)
             
-            # Call OpenRouter with vision
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    OPENROUTER_URL,
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://github.com/Aditya-PS-05",
-                        "X-Title": "codesm",
-                    },
-                    json={
-                        "model": VISION_MODEL,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": prompt,
-                                    },
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:{mime_type};base64,{base64_image}",
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                        "temperature": 0.2,
-                        "max_tokens": 4096,
-                    },
-                )
-                
-                if response.status_code != 200:
-                    logger.error(f"Vision API error: {response.status_code} - {response.text}")
-                    return f"Error: Vision API returned {response.status_code}"
-                
-                data = response.json()
-                result = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                
-                return f"**Analysis of {path.name}:**\n\n{result}"
-                
+            from codesm.provider.base import complete
+            result = await complete("Analyze the provided image.", [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}},
+            ])
+            return f"**Analysis of {path.name}:**\n\n{result}"
+
         except Exception as e:
             logger.error(f"Image analysis failed: {e}")
             return f"Error analyzing image: {e}"
@@ -246,31 +207,10 @@ class LookAtTool(Tool):
 Provide a focused analysis based on the objective. Be concise and actionable."""
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    OPENROUTER_URL,
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://github.com/Aditya-PS-05",
-                        "X-Title": "codesm",
-                    },
-                    json={
-                        "model": VISION_MODEL,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0.2,
-                        "max_tokens": 4096,
-                    },
-                )
-                
-                if response.status_code != 200:
-                    return f"Error: API returned {response.status_code}"
-                
-                data = response.json()
-                result = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                
-                return f"**Analysis of {filename}:**\n\n{result}"
-                
+            from codesm.provider.base import complete
+            result = await complete("Analyze the provided document.", prompt)
+            return f"**Analysis of {filename}:**\n\n{result}"
+
         except Exception as e:
             return f"Error analyzing content: {e}"
     

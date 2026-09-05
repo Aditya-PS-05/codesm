@@ -13,6 +13,8 @@ from textual.message import Message
 from rich.text import Text
 import re
 
+from .chat import ThemedMarkdown, styled_markdown
+from .clipboard import SelectableStatic
 
 TOOL_ICONS = {
     "read": "✓",
@@ -41,7 +43,7 @@ TOOL_CATEGORIES = {
 }
 
 # Colors
-YELLOW = "#FFFF00"  # Keywords, patterns
+YELLOW = "#d7ba7d"  # Keywords, patterns
 CYAN = "#5dd9c1"    # File paths
 GREEN = "#a6da95"   # Checkmarks
 DIM = "#666666"     # Tree connectors, secondary text
@@ -630,35 +632,26 @@ class CollapsibleTreeGroup(Static, can_focus=True):
     
     def on_click(self, event):
         """Handle click to toggle."""
+        if self.screen.get_selected_text():
+            event.stop()
+            event.prevent_default()
+            return
         event.stop()
         self.toggle()
 
 
-class ToolTreeWidget(Static, can_focus=True):
-    """Amp-style tool call display with tree hierarchy.
-    
-    Groups related tool calls and shows them in a collapsible tree:
-    
-        ✓ Search
-        │
-        ├── ✓ Grep "pattern" in src/
-        ├── ✓ Glob "*.py"
-        └── ✓ Read file.py
-    """
+class ToolTreeWidget(SelectableStatic, can_focus=True):
+    """Compact activity rows with expandable tool output."""
     
     DEFAULT_CSS = """
     ToolTreeWidget {
         height: auto;
-        padding: 0 2;
-        margin: 0;
-    }
-    
-    ToolTreeWidget:hover {
-        background: $surface;
+        padding: 0 1;
+        margin: 1 0 0 0;
     }
     
     ToolTreeWidget:focus {
-        background: $surface;
+        text-style: bold;
     }
     """
     
@@ -671,7 +664,7 @@ class ToolTreeWidget(Static, can_focus=True):
         self,
         category: str,
         *,
-        collapsed: bool = False,
+        collapsed: bool = True,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -679,109 +672,58 @@ class ToolTreeWidget(Static, can_focus=True):
         self._collapsed = collapsed
         # (name, args, pending, summary, streaming_text, diff_preview)
         self._tools: list[tuple[str, dict, bool, str, str, str]] = []
+        self._errors: set[int] = set()
         self._pending = True
     
     def render(self) -> Text:
         text = Text()
-        
-        # Header with status
-        if self._collapsed:
-            text.append("▸ ", style="dim")
-        elif self._tools:
-            text.append("▾ ", style="dim")
-        
-        if self._pending and any(t[2] for t in self._tools):
-            text.append("~ ", style="dim")
-        else:
-            text.append("✓ ", style=f"bold {GREEN}")
-        
-        text.append(self.category.title(), style="bold white")
-        
-        if self._collapsed:
-            completed = sum(1 for t in self._tools if not t[2])
-            text.append(f" ({completed}/{len(self._tools)})", style="dim")
-            return text
-        
-        if not self._tools:
-            return text
-        
-        # Vertical connector
-        text.append("\n│", style=DIM)
-        
-        # Render each tool
+        grouped = len(self._tools) > 1
+        hidden_lines = 0
+        if grouped:
+            text.append("• ", style="red" if self._errors else "dim")
+            text.append(self.category, style="bold")
         for i, (name, args, pending, summary, streaming_text, diff_preview) in enumerate(self._tools):
-            is_last = (i == len(self._tools) - 1)
-            has_sublines = bool(streaming_text or diff_preview)
-            connector = "\n└── " if is_last and not has_sublines else "\n├── "
-            text.append(connector, style=DIM)
-            
-            if pending:
-                text.append("~ ", style="dim")
-            else:
-                text.append("✓ ", style=f"bold {GREEN}")
-            
+            failed = i in self._errors
+            text.append("\n  " if grouped else "• ", style="red" if failed else "dim")
             text.append_text(self._format_tool(name, args, pending))
-            
+            if failed:
+                text.append(" · failed", style="red")
             if summary and not pending:
-                text.append(f" {summary}", style="dim")
-            
-            # Show streaming text inline (for bash output, etc.)
-            if streaming_text and not self._collapsed:
-                lines = streaming_text.strip().split("\n")[:3]  # Max 3 lines preview
-                for j, line in enumerate(lines):
-                    is_last_line = (j == len(lines) - 1) and is_last and not diff_preview
-                    line_connector = "\n│   └── " if is_last_line else "\n│   ├── "
-                    text.append(line_connector, style=DIM)
-                    # Truncate long lines
-                    display_line = line[:60] + "..." if len(line) > 60 else line
-                    text.append(display_line, style="dim")
-                if len(streaming_text.strip().split("\n")) > 3:
-                    text.append("\n│   └── ", style=DIM)
-                    text.append(f"... ({len(streaming_text.strip().split(chr(10))) - 3} more lines)", style="dim italic")
-            
-            # Show diff preview for edit/write operations
-            if diff_preview and not self._collapsed:
-                text.append_text(self._render_diff_preview(diff_preview, is_last))
+                text.append(f" · {summary}", style="dim")
+            details = diff_preview or streaming_text
+            if details and self._collapsed:
+                hidden_lines += len(details.splitlines())
+                if failed:
+                    reason = next((line.strip() for line in streaming_text.splitlines() if line.strip()), "")
+                    if reason and reason not in summary:
+                        text.append(f"\n    {reason}" if grouped else f"\n  {reason}", style="red")
+                        if not diff_preview:
+                            hidden_lines -= 1
+            elif diff_preview:
+                text.append_text(self._render_diff_preview(diff_preview, i == len(self._tools) - 1))
+            elif streaming_text:
+                for line in streaming_text.rstrip().splitlines():
+                    text.append(f"\n    {line}" if grouped else f"\n  {line}", style="dim")
+
+        if self._collapsed and (hidden_lines > 3 or self._errors):
+            text.append("\n  ", style="dim")
+            if hidden_lines:
+                text.append(f"… +{hidden_lines} {'line' if hidden_lines == 1 else 'lines'} ", style="dim")
+            text.append("(ctrl+t to view transcript)", style="dim")
         
         return text
     
     def _render_diff_preview(self, diff: str, is_last: bool) -> Text:
-        """Render a compact diff preview with colors."""
+        """Render the full expanded diff without clipping evidence."""
         text = Text()
-        lines = diff.strip().split("\n")
-        
-        # Count additions/deletions
-        additions = sum(1 for l in lines if l.startswith('+') and not l.startswith('+++'))
-        deletions = sum(1 for l in lines if l.startswith('-') and not l.startswith('---'))
-        
-        # Show summary line
-        prefix = "\n│   └── " if is_last else "\n│   ├── "
-        text.append(prefix, style=DIM)
-        text.append(f"+{additions}", style=f"bold {GREEN}")
-        text.append(" / ", style="dim")
-        text.append(f"-{deletions}", style="bold red")
-        
-        # Show first few diff lines (max 4)
-        shown_lines = 0
-        for line in lines:
-            if shown_lines >= 4:
-                break
-            if line.startswith('@@'):
-                continue
-            if line.startswith('+++') or line.startswith('---'):
-                continue
-            
-            line_prefix = "\n│       "
-            text.append(line_prefix, style=DIM)
-            
-            display_line = line[:50] + "..." if len(line) > 50 else line
+        for line in diff.rstrip().splitlines():
+            text.append("\n    " if len(self._tools) > 1 else "\n  ", style="dim")
             if line.startswith('+'):
-                text.append(display_line, style=f"{GREEN}")
+                text.append(line, style=GREEN)
             elif line.startswith('-'):
-                text.append(display_line, style="red")
+                text.append(line, style="red")
             else:
-                text.append(display_line, style="dim")
-            shown_lines += 1
+                text.append(line, style="dim")
         
         return text
     
@@ -789,48 +731,51 @@ class ToolTreeWidget(Static, can_focus=True):
         """Format a tool call with styled output."""
         text = Text()
         dim = pending
-        base_style = "dim" if dim else ""
+        base_style = "dim" if dim else "bold"
         
         if name == "read":
             path = args.get("path", args.get("file_path", ""))
             text.append("Read ", style=base_style)
             text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
         elif name == "write":
-            path = args.get("path", "")
-            text.append("Write ", style=base_style)
+            path = args.get("path", args.get("file_path", ""))
+            text.append("Writing " if pending else "Wrote ", style=base_style)
             text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
-        elif name == "edit":
-            path = args.get("path", "")
-            text.append("Edit ", style=base_style)
+        elif name in ("edit", "multiedit"):
+            path = args.get("path", args.get("file_path", ""))
+            text.append("Editing " if pending else "Edited ", style=base_style)
             text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
         elif name == "grep":
             pattern = args.get("pattern", "")
             path = args.get("path", "")
-            text.append("Grep ", style=base_style)
+            text.append("Search " if pending else "Searched ", style=base_style)
             text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
             if path:
                 text.append(" in ", style="dim")
                 text.append(self._short_path(path), style=f"{CYAN}" if not dim else "dim")
         elif name == "glob":
             pattern = args.get("pattern", args.get("file_pattern", ""))
-            text.append("Glob ", style=base_style)
+            text.append("Find " if pending else "Found ", style=base_style)
             text.append(f'"{pattern}"', style=f"bold {YELLOW}" if not dim else "dim")
         elif name == "bash":
-            cmd = args.get("command", "")[:50]
-            desc = args.get("description", "")
-            if desc:
-                text.append(desc, style=base_style)
-            else:
-                text.append("$ ", style=base_style)
-                text.append(cmd, style=f"{YELLOW}" if not dim else "dim")
+            text.append("Running " if pending else "Ran ", style=base_style)
+            text.append(args.get("command", ""), style="dim" if dim else "")
         elif name == "codesearch":
-            query = args.get("query", "")[:40]
-            text.append("Search ", style=base_style)
+            query = args.get("query", "")
+            text.append("Search " if pending else "Searched ", style=base_style)
             text.append(f'"{query}"', style=f"bold {YELLOW}" if not dim else "dim")
         elif name == "websearch":
-            query = args.get("query", "")[:40]
-            text.append("Web ", style=base_style)
+            query = args.get("query", "")
+            text.append("Searching the web " if pending else "Searched the web ", style=base_style)
             text.append(f'"{query}"', style=f"bold {YELLOW}" if not dim else "dim")
+        elif name in ("web", "webfetch"):
+            text.append("Fetching " if pending else "Fetched ", style=base_style)
+            text.append(args.get("url", ""), style=CYAN)
+        elif name in ("task", "parallel_tasks", "oracle", "planner", "librarian"):
+            text.append("Started ", style=base_style)
+            text.append(args.get("subagent_type", name), style=CYAN)
+            if args.get("description"):
+                text.append(f" · {args['description']}", style="dim")
         else:
             text.append(f"{name}", style=base_style)
         
@@ -848,37 +793,47 @@ class ToolTreeWidget(Static, can_focus=True):
     def add_tool(self, name: str, args: dict, pending: bool = True) -> int:
         """Add a tool to the group. Returns the index."""
         self._tools.append((name, args, pending, "", "", ""))
-        self.refresh()
+        self._pending = any(t[2] for t in self._tools)
+        self.refresh(layout=True)
         return len(self._tools) - 1
     
-    def mark_tool_complete(self, index: int, summary: str = "", streaming_text: str = "", diff_preview: str = ""):
+    def mark_tool_complete(self, index: int, summary: str = "", streaming_text: str = "", diff_preview: str = "", *, is_error: bool = False):
         """Mark a tool as complete with optional inline content."""
         if 0 <= index < len(self._tools):
             name, args, _, _, _, _ = self._tools[index]
             self._tools[index] = (name, args, False, summary, streaming_text, diff_preview)
+            if is_error:
+                self._errors.add(index)
             # Check if all tools are complete
             if not any(t[2] for t in self._tools):
                 self._pending = False
-            self.refresh()
+            self.refresh(layout=True)
     
     def update_streaming_text(self, index: int, text: str):
         """Update streaming text for a tool (for live output)."""
         if 0 <= index < len(self._tools):
             name, args, pending, summary, _, diff = self._tools[index]
             self._tools[index] = (name, args, pending, summary, text, diff)
-            self.refresh()
+            self.refresh(layout=True)
     
     def set_diff_preview(self, index: int, diff: str):
         """Set diff preview for an edit/write tool."""
         if 0 <= index < len(self._tools):
             name, args, pending, summary, streaming, _ = self._tools[index]
             self._tools[index] = (name, args, pending, summary, streaming, diff)
-            self.refresh()
+            self.refresh(layout=True)
     
     def toggle_collapse(self):
         """Toggle collapsed state."""
         self._collapsed = not self._collapsed
-        self.refresh()
+        self.refresh(layout=True)
+
+    def _get_content_text(self) -> str:
+        return "\n".join(
+            "\n".join((self._format_tool(name, args, pending).plain, summary, output,
+                        diff if diff and diff not in output else "")).rstrip()
+            for name, args, pending, summary, output, diff in self._tools
+        )
     
     def action_toggle_collapse(self):
         """Action handler for key bindings."""
@@ -886,35 +841,26 @@ class ToolTreeWidget(Static, can_focus=True):
     
     def on_click(self, event):
         """Handle click to toggle collapse."""
+        if self.screen.get_selected_text():
+            event.stop()
+            event.prevent_default()
+            return
         event.stop()
         self.toggle_collapse()
 
 
 class ThinkingTreeWidget(Static, can_focus=True):
-    """Amp-style thinking indicator with collapsible content.
-    
-    Renders as:
-        ▾ Thinking...
-        │
-        └── TL;DR: Summary of what was analyzed
-    
-    Or when collapsed:
-        ▸ Thinking (collapsed)
-    """
+    """One-line thinking activity with an expandable summary."""
     
     DEFAULT_CSS = """
     ThinkingTreeWidget {
         height: auto;
-        padding: 0 2;
-        margin: 0 0 1 0;
-    }
-    
-    ThinkingTreeWidget:hover {
-        background: $surface;
+        padding: 0 1;
+        margin: 1 0 0 0;
     }
     
     ThinkingTreeWidget:focus {
-        background: $surface;
+        text-style: bold;
     }
     """
     
@@ -930,48 +876,25 @@ class ThinkingTreeWidget(Static, can_focus=True):
         self._message = message
         self._frame = 0
         self._complete = False
-        self._collapsed = False
+        self._collapsed = True
         self._summary: str | None = None
         self._sub_items: list[str] = []
     
     def render(self) -> Text:
         text = Text()
-        
-        if self._collapsed and self._complete:
-            text.append("▸ ", style="dim")
-            text.append("✓ ", style=f"bold {GREEN}")
-            text.append(self._message, style="bold white")
-            if self._summary:
-                text.append(f": {self._summary[:50]}...", style="dim")
-            return text
-        
-        # Expand/collapse indicator
-        if self._sub_items or self._summary:
-            text.append("▾ ", style="dim")
-        
-        # Status icon
         if self._complete:
-            text.append("✓ ", style=f"bold {GREEN}")
+            text.append("• Thought", style="dim")
         else:
             spinner = self.SPINNER[self._frame % len(self.SPINNER)]
-            text.append(f"{spinner} ", style=f"bold {CYAN}")
-        
-        text.append(self._message, style="bold white" if self._complete else "")
-        
-        # Show summary/sub-items if expanded
-        if (self._summary or self._sub_items) and not self._collapsed:
-            text.append("\n│", style=DIM)
-            
-            if self._summary:
-                text.append("\n└── ", style=DIM)
-                text.append("TL;DR: ", style=f"bold {LIGHT_BLUE}")
-                text.append(self._summary, style="")
-            
-            for i, item in enumerate(self._sub_items):
-                is_last = (i == len(self._sub_items) - 1) and not self._summary
-                connector = "\n└── " if is_last else "\n├── "
-                text.append(connector, style=DIM)
-                text.append(item, style="dim")
+            text.append(f"{spinner} {self._message}", style="dim")
+
+        if self._collapsed:
+            if self._summary or self._sub_items:
+                text.append(" (ctrl+t to view transcript)", style="dim")
+        else:
+            for item in [*self._sub_items, self._summary]:
+                if item:
+                    text.append("\n  " + item.replace("\n", "\n  "), style="dim")
         
         return text
     
@@ -984,23 +907,23 @@ class ThinkingTreeWidget(Static, can_focus=True):
     def set_message(self, message: str):
         """Update the thinking message."""
         self._message = message
-        self.refresh()
+        self.refresh(layout=True)
     
     def add_sub_item(self, item: str):
         """Add a sub-item to show progress."""
         self._sub_items.append(item)
-        self.refresh()
+        self.refresh(layout=True)
     
     def complete(self, summary: str | None = None):
         """Mark thinking as complete with optional summary."""
         self._complete = True
         self._summary = summary
-        self.refresh()
+        self.refresh(layout=True)
     
     def toggle_collapse(self):
         """Toggle collapsed state."""
         self._collapsed = not self._collapsed
-        self.refresh()
+        self.refresh(layout=True)
     
     def action_toggle(self):
         """Action handler for key bindings."""
@@ -1009,6 +932,10 @@ class ThinkingTreeWidget(Static, can_focus=True):
     
     def on_click(self, event):
         """Handle click to toggle collapse."""
+        if self.screen.get_selected_text():
+            event.stop()
+            event.prevent_default()
+            return
         if self._complete:
             event.stop()
             self.toggle_collapse()
@@ -1242,36 +1169,27 @@ class OracleTreeWidget(Static, can_focus=True):
     
     def on_click(self, event):
         """Handle click to toggle collapse."""
+        if self.screen.get_selected_text():
+            event.stop()
+            event.prevent_default()
+            return
         if self._complete:
             event.stop()
             self.toggle_collapse()
 
 
-class SubAgentTreeWidget(Static, can_focus=True):
-    """Amp-style subagent task display with collapsible results.
-    
-    Renders as:
-        ▾ ✓ Task: Implement authentication
-        │
-        ├── Using coder subagent
-        ├── ✓ Read auth.py
-        ├── ✓ Edit auth.py
-        └── Result: Added JWT validation
-    """
+class SubAgentTreeWidget(SelectableStatic, can_focus=True):
+    """Specialist activity with status and expandable evidence."""
     
     DEFAULT_CSS = """
     SubAgentTreeWidget {
         height: auto;
-        padding: 0 2;
-        margin: 0 0 1 0;
-    }
-    
-    SubAgentTreeWidget:hover {
-        background: $surface;
+        padding: 0 1;
+        margin: 1 0 0 0;
     }
     
     SubAgentTreeWidget:focus {
-        background: $surface;
+        text-style: bold;
     }
     """
     
@@ -1287,76 +1205,53 @@ class SubAgentTreeWidget(Static, can_focus=True):
         description: str,
         *,
         subagent_type: str = "coder",
+        model: str = "",
         **kwargs
     ):
         super().__init__(**kwargs)
         self._description = description
         self._subagent_type = subagent_type
+        self.model = model
+        self.status = "waiting"
+        self.cost = None
         self._frame = 0
         self._complete = False
-        self._collapsed = False
+        self._collapsed = True
         self._actions: list[tuple[str, str, bool]] = []  # (action, detail, complete)
         self._result_summary: str = ""
     
     def render(self) -> Text:
         text = Text()
-        
-        # Collapsed state
-        if self._collapsed and self._complete:
-            text.append("▸ ", style="dim")
-            text.append("✓ ", style=f"bold {GREEN}")
-            text.append("Task: ", style="dim")
-            desc_preview = self._description[:50] + "..." if len(self._description) > 50 else self._description
-            text.append(desc_preview, style="bold white")
+        success = self.status in ("completed", "verified")
+        verb = "Completed" if success else self.status.title() if self._complete else "Started"
+        text.append(f"• {verb} ", style="dim" if success else "bold")
+        text.append(self._subagent_type, style=CYAN)
+        text.append(f" · {self._description}")
+        cost = f"~${self.cost:.4f}" if self.cost is not None else "cost unknown"
+        details = [self.model, self.status, cost]
+        text.append("\n  " + " · ".join(part for part in details if part), style="dim")
+        if self._complete and not success:
+            text.stylize("red", 0, len(verb) + 2)
+        if not self._collapsed:
+            for action, detail, complete in self._actions:
+                text.append(f"\n  {action}: {detail}", style="dim" if complete else "")
             if self._result_summary:
-                text.append(f": {self._result_summary[:30]}...", style="dim")
-            return text
-        
-        # Expanded header
-        if self._complete or self._actions:
-            text.append("▾ ", style="dim")
-        
-        if self._complete:
-            text.append("✓ ", style=f"bold {GREEN}")
-        else:
-            spinner = self.SPINNER[self._frame % len(self.SPINNER)]
-            text.append(f"{spinner} ", style=f"bold {CYAN}")
-        
-        text.append("Task: ", style="dim")
-        desc_display = self._description[:60] + "..." if len(self._description) > 60 else self._description
-        text.append(desc_display, style="bold white")
-        
-        # Show content
-        if self._actions or self._subagent_type:
-            text.append("\n│", style=DIM)
-        
-        # Subagent type
-        text.append("\n├── ", style=DIM)
-        text.append(f"Using {self._subagent_type} subagent", style="dim")
-        
-        # Actions
-        for i, (action, detail, complete) in enumerate(self._actions):
-            is_last = (i == len(self._actions) - 1) and not self._result_summary
-            connector = "\n└── " if is_last else "\n├── "
-            text.append(connector, style=DIM)
-            
-            if complete:
-                text.append("✓ ", style=f"bold {GREEN}")
-            else:
-                text.append("~ ", style="dim")
-            
-            text.append(action, style="")
-            if detail:
-                text.append(f" {detail}", style=f"{CYAN}")
-        
-        # Result summary
-        if self._result_summary and self._complete:
-            text.append("\n└── ", style=DIM)
-            text.append("Result: ", style=f"bold {LIGHT_BLUE}")
-            text.append(self._result_summary, style="")
-        
+                text.append("\n  " + self._result_summary.replace("\n", "\n  "))
+        elif self._result_summary:
+            preview = self._result_summary.splitlines()[0]
+            preview = preview[:100] + "…" if len(preview) > 100 else preview
+            text.append(f"\n  {preview}", style="dim" if success else "")
         return text
-    
+
+    def _get_content_text(self) -> str:
+        return f"{self._subagent_type}: {self._description}\n{self.model} · {self.status}\n{self._result_summary}"
+
+    def update_status(self, status: str, cost: float | None = None):
+        self.status = status
+        if cost is not None:
+            self.cost = cost
+        self.refresh(layout=True)
+
     def next_frame(self):
         """Advance spinner animation."""
         if not self._complete:
@@ -1366,27 +1261,29 @@ class SubAgentTreeWidget(Static, can_focus=True):
     def add_action(self, action: str, detail: str = "", complete: bool = False):
         """Add an action the subagent performed."""
         self._actions.append((action, detail, complete))
-        self.refresh()
+        self.refresh(layout=True)
     
     def mark_action_complete(self, index: int):
         """Mark a specific action as complete."""
         if 0 <= index < len(self._actions):
             action, detail, _ = self._actions[index]
             self._actions[index] = (action, detail, True)
-            self.refresh()
+            self.refresh(layout=True)
     
-    def complete(self, result_summary: str = ""):
+    def complete(self, result_summary: str = "", *, status: str = "completed", cost: float | None = None):
         """Mark the subagent task as complete."""
         self._complete = True
+        self.status = status
+        self.cost = cost
         self._result_summary = result_summary
         # Mark all actions complete
         self._actions = [(a, d, True) for a, d, _ in self._actions]
-        self.refresh()
+        self.refresh(layout=True)
     
     def toggle_collapse(self):
         """Toggle collapsed state."""
         self._collapsed = not self._collapsed
-        self.refresh()
+        self.refresh(layout=True)
     
     def action_toggle(self):
         """Action handler for key bindings."""
@@ -1395,6 +1292,10 @@ class SubAgentTreeWidget(Static, can_focus=True):
     
     def on_click(self, event):
         """Handle click to toggle collapse."""
+        if self.screen.get_selected_text():
+            event.stop()
+            event.prevent_default()
+            return
         if self._complete:
             event.stop()
             self.toggle_collapse()
@@ -1585,8 +1486,8 @@ class TodoListWidget(Static):
     DEFAULT_CSS = """
     TodoListWidget {
         height: auto;
-        padding: 0 2;
-        margin: 0 0 1 0;
+        padding: 0 1;
+        margin: 1 0 0 0;
     }
     """
 
@@ -1772,17 +1673,8 @@ class CodeReviewWidget(Static):
     DEFAULT_CSS = """
     CodeReviewWidget {
         height: auto;
-        padding: 1 2;
-        margin: 1 0;
-        border-left: heavy $warning;
-    }
-    
-    CodeReviewWidget.passed {
-        border-left: heavy $success;
-    }
-    
-    CodeReviewWidget.critical {
-        border-left: heavy $error;
+        padding: 0 1;
+        margin: 1 0 0 0;
     }
     """
 
@@ -1799,14 +1691,13 @@ class CodeReviewWidget(Static):
         result = self.review_result
         
         if not result.issues:
-            text.append("✓ ", style=f"bold {GREEN}")
+            text.append("• ", style=f"bold {GREEN}")
             text.append("Code review passed", style="bold")
             text.append(f" - no issues found in {len(result.files_reviewed)} file(s)", style="dim")
             return text
         
         # Header
-        text.append(":: ", style="bold white")
-        text.append("Code Review", style="bold white")
+        text.append("• Code review", style="bold")
         text.append(f" ({len(result.issues)} issue(s))\n", style="dim")
         
         # Group issues by severity
@@ -1852,112 +1743,56 @@ class CodeReviewWidget(Static):
         return text
 
 
-class StreamingTextWidget(Static):
+class StreamingTextWidget(SelectableStatic):
     """Widget to display streaming text response with live updates.
-    
-    Shows text as it streams in, with a blinking cursor at the end.
-    Uses plain text during streaming for smooth incremental updates,
-    then renders full markdown on completion.
+
+    Render Markdown while streaming so complete links are immediately usable.
     """
 
     DEFAULT_CSS = """
     StreamingTextWidget {
         height: auto;
-        padding: 1 2;
+        padding: 0 1;
         margin: 1 0 0 0;
-    }
-    
-    StreamingTextWidget.streaming {
-        /* Active streaming state */
-    }
-    
-    StreamingTextWidget.complete {
-        /* Completed state */
     }
     """
     
-    # Use reactive to auto-trigger updates
-    _content: reactive[str] = reactive("", repaint=True)
+    _content: reactive[str] = reactive("", layout=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._streaming = True
-        self._cursor_visible = True
-        self._rendered_cache: Text | None = None
-        self._last_rendered_len = 0
+        self._markdown = styled_markdown("")
         self.set_class(True, "streaming")
 
-    def render(self) -> Text:
-        from rich.markdown import Markdown
-        from rich.console import Console
-        from rich.theme import Theme
-        
-        if self._streaming:
-            # During streaming: use plain text for smooth appending (no flicker)
-            text = Text(self._content, style="white")
-            
-            # Add blinking cursor
-            cursor = "▊" if self._cursor_visible else " "
-            text.append(cursor, style=f"bold {CYAN}")
-            return text
-        
-        # After completion: render full markdown (cached)
-        if self._rendered_cache is not None and self._last_rendered_len == len(self._content):
-            return self._rendered_cache
-        
-        text = Text()
-        
-        if self._content:
-            themed_console = Console(
-                theme=Theme({
-                    "markdown.link": f"bold {CYAN}",
-                    "markdown.link_url": f"dim {CYAN}",
-                    "markdown.h1": "bold white",
-                    "markdown.h2": f"bold #8aadf4",
-                    "markdown.h3": f"bold #8aadf4",
-                    "markdown.code": f"{YELLOW}",
-                }),
-                force_terminal=True,
-                width=120,
-            )
-            
-            with themed_console.capture() as capture:
-                themed_console.print(Markdown(self._content, hyperlinks=True, code_theme="monokai"))
-            
-            text = Text.from_ansi(capture.get())
-        
-        # Cache the rendered result
-        self._rendered_cache = text
-        self._last_rendered_len = len(self._content)
-        
-        return text
+    def render(self) -> ThemedMarkdown:
+        if self._markdown.original_markup != self._content:
+            self._markdown = styled_markdown(self._content)
+        return self._markdown
+
+    def get_selection(self, selection):
+        # A new chunk can arrive just before copy, before the next screen paint.
+        self.render_line(0)
+        return super().get_selection(selection)
 
     def append_text(self, content: str):
-        """Append new text content (streaming) - triggers reactive repaint."""
-        # Use assignment to trigger reactive update (not +=)
-        self._content = self._content + content
-        # Invalidate cache since content changed
-        self._rendered_cache = None
+        """Append content and resize the transcript as it wraps."""
+        self._content += content
 
     def set_content(self, content: str):
         """Set the full content."""
         self._content = content
-        self._rendered_cache = None
 
     def get_content(self) -> str:
         """Get the current content."""
         return self._content
 
+    def _get_content_text(self) -> str:
+        return self._content
+
     def mark_complete(self):
         """Mark streaming as complete - now render full markdown."""
         self._streaming = False
-        self._rendered_cache = None  # Force re-render with markdown
         self.set_class(False, "streaming")
         self.set_class(True, "complete")
-        self.refresh()
-
-    def toggle_cursor(self):
-        """Toggle cursor visibility for blinking effect."""
-        if self._streaming:
-            self._cursor_visible = not self._cursor_visible
-            self.refresh()
+        self.refresh(layout=True)

@@ -181,6 +181,8 @@ class Permission:
             metadata=metadata or {},
         )
         
+        if self._on_request is None:
+            raise PermissionDeniedError(request, "Approval requires an interactive session; run codesm run.")
         loop = asyncio.get_event_loop()
         future: asyncio.Future = loop.create_future()
         
@@ -196,7 +198,7 @@ class Permission:
             if response == PermissionResponse.DENY:
                 raise PermissionDeniedError(request)
         except asyncio.CancelledError:
-            raise PermissionDeniedError(request, "Permission request cancelled")
+            raise
         finally:
             if session_id in self._pending and request.id in self._pending[session_id]:
                 del self._pending[session_id][request.id]

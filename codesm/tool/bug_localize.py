@@ -76,23 +76,6 @@ class BugLocalizeTool(Tool):
             "required": ["error"],
         }
     
-    def _get_client(self) -> httpx.AsyncClient:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not set")
-        
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=120.0,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://github.com/Aditya-PS-05",
-                    "X-Title": "codesm-bug-localize",
-                },
-            )
-        return self._client
-    
     async def execute(self, args: dict, context: dict) -> str:
         error = args.get("error", "")
         extra_context = args.get("context", "")
@@ -205,7 +188,6 @@ class BugLocalizeTool(Tool):
         related_code: str,
     ) -> str:
         """Analyze error using LLM"""
-        client = self._get_client()
         
         prompt_parts = ["Analyze this error and find the root cause:\n\n"]
         prompt_parts.append(f"## Error/Stack Trace\n```\n{error}\n```\n\n")
@@ -221,21 +203,5 @@ class BugLocalizeTool(Tool):
         if related_code:
             prompt_parts.append(f"## Related Code Search\n{related_code}\n\n")
         
-        response = await client.post(
-            OPENROUTER_URL,
-            json={
-                "model": BUG_MODEL,
-                "messages": [
-                    {"role": "system", "content": BUG_SYSTEM_PROMPT},
-                    {"role": "user", "content": "".join(prompt_parts)},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 4096,
-            },
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"API error: {response.status_code}")
-        
-        data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "No analysis")
+        from codesm.provider.base import complete
+        return await complete(BUG_SYSTEM_PROMPT, "".join(prompt_parts))

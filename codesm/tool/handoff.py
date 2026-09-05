@@ -87,7 +87,7 @@ class HandoffTool(Tool):
     
     async def execute(self, args: dict, context: dict) -> str:
         """Execute the handoff - analyze context and create new session"""
-        from codesm.provider.base import get_provider
+        from codesm.provider.base import complete
         from codesm.session.session import Session
         
         goal = args.get("goal", "")
@@ -107,7 +107,6 @@ class HandoffTool(Tool):
         
         # Use Gemini 2.5 Flash for fast context analysis
         try:
-            provider = get_provider("handoff")  # Uses Gemini 2.5 Flash via router
             
             user_prompt = f"""Analyze this conversation and create a handoff document for a new agent.
 
@@ -123,15 +122,8 @@ class HandoffTool(Tool):
 Create a concise handoff document that will allow a new agent to continue this work seamlessly."""
 
             # Collect response
-            handoff_summary = ""
-            async for chunk in provider.stream(
-                system=HANDOFF_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=None,
-            ):
-                if chunk.type == "text":
-                    handoff_summary += chunk.content
-            
+            handoff_summary = await complete(HANDOFF_SYSTEM_PROMPT, user_prompt, model="handoff")
+
         except Exception as e:
             logger.warning(f"Handoff LLM failed, using basic summary: {e}")
             handoff_summary = self._basic_summary(goal, messages, include_files)
@@ -142,6 +134,19 @@ Create a concise handoff document that will allow a new agent to continue this w
                 directory=Path(workspace_dir),
                 is_child=True,
             )
+            if session:
+                from copy import deepcopy
+                new_session.debug_state = deepcopy(session.debug_state)
+                new_session.usage_records = deepcopy(session.usage_records)
+                new_session.parent_id = session.id
+                new_session.file_state = deepcopy(session.file_state)
+                new_session.agent_runs = deepcopy(session.agent_runs)
+                new_session.last_model = session.last_model
+                from codesm.storage.storage import Storage
+                todos = Storage.read(["todo", session.id]) or []
+                Storage.write(["todo", new_session.id], [{**todo, "session_id": new_session.id} for todo in todos])
+                new_session.save()
+
             
             # Set title based on goal
             new_session.set_title(f"Continuation: {goal[:50]}...")
@@ -187,7 +192,7 @@ Create a concise handoff document that will allow a new agent to continue this w
         parts = []
         total_chars = 0
         
-        for msg in messages:
+        for msg in reversed(messages):
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             
@@ -207,7 +212,7 @@ Create a concise handoff document that will allow a new agent to continue this w
             parts.append(formatted)
             total_chars += len(formatted)
         
-        return "\n\n".join(reversed(parts))  # Most recent first for analysis
+        return "\n\n".join(reversed(parts))  # Retain the latest context in chronological order.
     
     def _basic_summary(self, goal: str, messages: list[dict], include_files: list[str]) -> str:
         """Create basic summary without LLM"""

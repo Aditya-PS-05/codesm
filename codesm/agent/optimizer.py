@@ -75,6 +75,9 @@ class UsageRecord:
     timestamp: datetime = field(default_factory=datetime.now)
     task_type: str = ""
     success: bool = True
+    estimated: bool = False
+    cost_known: bool = True
+    run_id: str = ""
 
 
 @dataclass
@@ -87,6 +90,8 @@ class UsageStats:
     total_latency_ms: float = 0.0
     avg_latency_ms: float = 0.0
     error_count: int = 0
+    estimated_requests: int = 0
+    unpriced_requests: int = 0
     
     def add(self, record: UsageRecord):
         self.total_requests += 1
@@ -97,6 +102,8 @@ class UsageStats:
         self.avg_latency_ms = self.total_latency_ms / self.total_requests
         if not record.success:
             self.error_count += 1
+        self.estimated_requests += int(record.estimated)
+        self.unpriced_requests += int(not record.cost_known)
 
 
 @dataclass
@@ -124,6 +131,13 @@ class CostLatencyOptimizer:
         self._model_stats: dict[str, UsageStats] = defaultdict(UsageStats)
         self._daily_cost: float = 0.0
         self._session_cost: float = 0.0
+        self.prices: dict[str, dict] = {}
+        self.max_requests: int | None = None
+        self.max_task_tokens: int | None = None
+        self._requests = 0
+        self._tokens = 0
+        self._reserved_cost = 0.0
+        self._reserved_tokens = 0
         
         # Latency tracking (rolling average)
         self._latency_samples: dict[str, list[float]] = defaultdict(list)
@@ -189,9 +203,14 @@ class CostLatencyOptimizer:
         latency_ms: float,
         task_type: str = "",
         success: bool = True,
+        estimated: bool = False,
+        cost_known: bool = True,
+        cost: float | None = None,
+        run_id: str = "",
     ) -> UsageRecord:
         """Record API usage"""
-        cost = self.estimate_cost(model, input_tokens, output_tokens)
+        if cost is None:
+            cost = self.estimate_cost(model, input_tokens, output_tokens)
         
         record = UsageRecord(
             model=model,
@@ -201,6 +220,9 @@ class CostLatencyOptimizer:
             cost=cost,
             task_type=task_type,
             success=success,
+            estimated=estimated,
+            cost_known=cost_known,
+            run_id=run_id,
         )
         
         # Update tracking
@@ -223,6 +245,47 @@ class CostLatencyOptimizer:
         self._save_daily_usage()
         
         return record
+
+    def request_price(self, model: str, tokens_in: int, tokens_out: int) -> float | None:
+        if model.startswith("ollama/"):
+            return 0.0
+        # Dollar limits require configured rates; historical defaults are not billing guarantees.
+        rates = self.prices.get(model)
+        if rates is None:
+            return None
+        return (tokens_in * rates["input"] + tokens_out * rates["output"]) / 1_000_000
+
+    def reserve(self, model: str, tokens_in: int, tokens_out: int) -> tuple[float, int]:
+        """Reserve before dispatch; no await between checking and reserving."""
+        allowed, reason = self.can_proceed()
+        if not allowed:
+            raise RuntimeError(reason)
+        cost = self.request_price(model, tokens_in, tokens_out)
+        tokens = tokens_in + tokens_out
+        if self.max_requests is not None and self._requests >= self.max_requests:
+            raise RuntimeError("Task request limit reached")
+        if self.max_task_tokens is not None and self._tokens + self._reserved_tokens + tokens > self.max_task_tokens:
+            raise RuntimeError("Task token budget cannot cover this request")
+        if self.budget.hard_limit:
+            if any(not record.cost_known for record in self._session_usage):
+                raise RuntimeError("This session contains unpriced usage; start a new session to use a dollar budget")
+            if cost is None:
+                raise RuntimeError(f"Configure model_prices for {model} before using a dollar budget")
+            if self._session_cost + self._reserved_cost + cost > self.budget.session_limit:
+                raise RuntimeError("Task dollar budget cannot cover this request")
+            if self._daily_cost + self._reserved_cost + cost > self.budget.daily_limit:
+                raise RuntimeError("Daily dollar budget cannot cover this request")
+        self._requests += 1
+        self._reserved_cost += cost or 0.0
+        self._reserved_tokens += tokens
+        return cost or 0.0, tokens
+
+    def settle(self, reservation: tuple[float, int], **usage) -> UsageRecord:
+        self._reserved_cost = max(0.0, self._reserved_cost - reservation[0])
+        self._reserved_tokens -= reservation[1]
+        self._tokens += usage["input_tokens"] + usage["output_tokens"]
+        price = self.request_price(usage["model"], usage["input_tokens"], usage["output_tokens"])
+        return self.record_usage(**usage, cost=price or 0.0, cost_known=price is not None)
     
     def _check_budget(self):
         """Check budget limits and trigger alerts"""
@@ -385,7 +448,10 @@ class CostLatencyOptimizer:
         """Reset session usage tracking"""
         self._session_usage = []
         self._session_cost = 0.0
-    
+        self._requests = self._tokens = self._reserved_tokens = 0
+        self._reserved_cost = 0.0
+        self._model_stats.clear()
+
     def on_budget_alert(self, callback: Callable[[float, float], None]):
         """Register callback for budget alerts"""
         self._on_budget_alert = callback

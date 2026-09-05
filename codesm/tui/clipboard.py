@@ -1,67 +1,51 @@
 """Clipboard utilities - copy with 'c' key or Ctrl+Shift+C"""
 
 import subprocess
+from urllib.parse import urlsplit
+from textual import events
 from textual.widgets import Static
 from textual.binding import Binding
 
 
 def copy_to_system_clipboard(text: str) -> bool:
     """Copy text to system clipboard using available methods."""
-    
-    # Try wl-copy first (Wayland - most reliable on modern Linux)
-    try:
-        result = subprocess.run(
-            ["wl-copy", "--"],
-            input=text.encode('utf-8'),
-            capture_output=True,
-            timeout=2
-        )
+
+    commands = (
+        ["wl-copy", "--type", "text/plain;charset=utf-8", "--"],
+        ["xsel", "--clipboard", "--input"],
+        ["xclip", "-selection", "clipboard"],
+        ["pbcopy"],
+    )
+    for command in commands:
+        try:
+            # Clipboard owners fork. Captured output pipes can stay open in the
+            # child, making a successful copy look like a timeout.
+            result = subprocess.run(
+                command,
+                input=text.encode("utf-8"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
         if result.returncode == 0:
             return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-
-    # Try xsel (X11)
-    try:
-        result = subprocess.run(
-            ["xsel", "--clipboard", "--input"],
-            input=text.encode('utf-8'),
-            capture_output=True,
-            timeout=2
-        )
-        if result.returncode == 0:
-            return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-
-    # Try xclip (X11) - use Popen since it doesn't exit immediately
-    try:
-        process = subprocess.Popen(
-            ["xclip", "-selection", "clipboard"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        process.stdin.write(text.encode('utf-8'))
-        process.stdin.close()
-        return True
-    except FileNotFoundError:
-        pass
-
-    # Try pbcopy (macOS)
-    try:
-        result = subprocess.run(
-            ["pbcopy"],
-            input=text.encode('utf-8'),
-            capture_output=True,
-            timeout=2
-        )
-        if result.returncode == 0:
-            return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-
     return False
+
+
+def copy_text(app, text: str) -> None:
+    """Use the desktop clipboard, falling back to the terminal clipboard."""
+    if not copy_to_system_clipboard(text):
+        try:
+            app.copy_to_clipboard(text)
+        except Exception:
+            app.notify("Could not copy to clipboard", severity="error", timeout=2)
+            return
+        # OSC 52 has no success acknowledgement from the terminal.
+        app.notify("Sent copy request to terminal", timeout=2)
+        return
+    app.notify("Copied!", timeout=1.5)
 
 
 class SelectableMixin:
@@ -80,27 +64,36 @@ class SelectableMixin:
 
     can_focus = True
 
+    def on_click(self, event: events.Click) -> None:
+        """Open rendered links through Textual's default-browser driver."""
+        if self.screen.get_selected_text():
+            event.stop()
+            event.prevent_default()
+            return
+        url = event.style.link
+        if event.button != 1 or not url:
+            return
+        try:
+            scheme = urlsplit(url).scheme.lower()
+        except ValueError:
+            return
+        if scheme in {"http", "https", "file", "mailto", "ftp"}:
+            event.stop()
+            event.prevent_default()
+            self.app.open_url(url)
+
     def action_copy_content(self) -> None:
         """Copy message content"""
         self._do_copy()
 
     def _do_copy(self) -> None:
         """Perform the copy operation"""
-        text = self._get_content_text()
+        text = self.screen.get_selected_text() or self._get_content_text()
         if not text:
             self.app.notify("Nothing to copy", severity="warning", timeout=1)
             return
         
-        # Try system clipboard
-        if copy_to_system_clipboard(text):
-            self.app.notify("Copied!", timeout=1.5)
-        else:
-            # Try Textual's OSC 52 as fallback
-            try:
-                self.app.copy_to_clipboard(text)
-                self.app.notify("Copied (OSC52)!", timeout=1.5)
-            except Exception:
-                self.app.notify("Copy failed - install xclip", severity="error", timeout=2)
+        copy_text(self.app, text)
 
     def _get_content_text(self) -> str:
         """Get the text content to copy"""
@@ -113,4 +106,5 @@ class SelectableMixin:
 
 class SelectableStatic(SelectableMixin, Static):
     """A Static widget that supports copy via 'c' key"""
-    pass
+
+    BINDINGS = SelectableMixin.BINDINGS

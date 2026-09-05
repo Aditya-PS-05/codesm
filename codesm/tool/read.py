@@ -35,7 +35,7 @@ class ReadTool(Tool):
         }
     
     async def execute(self, args: dict, context: dict) -> str:
-        path = Path(args["path"])
+        path = Path(context.get("cwd", ".")) / Path(args["path"]).expanduser()
         start = args.get("start_line", 1)
         end = args.get("end_line")
         

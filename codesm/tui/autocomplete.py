@@ -24,6 +24,7 @@ from textual.widgets.option_list import Option
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import events
+from rich.text import Text
 
 try:
     from thefuzz import fuzz
@@ -54,16 +55,19 @@ class AutocompletePopup(ModalScreen[str | None]):
     CSS = """
     AutocompletePopup {
         align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     AutocompletePopup > #popup-container {
-        width: 60;
-        max-height: 12;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
+        height: auto;
+        max-height: 100%;
         background: $surface;
-        border: solid $primary;
-        padding: 0;
-        margin-left: 4;
-        margin-bottom: 4;
+        border: round $panel;
+        padding: 0 1;
     }
 
     AutocompletePopup #filter-input {
@@ -76,12 +80,31 @@ class AutocompletePopup(ModalScreen[str | None]):
 
     AutocompletePopup #options-list {
         height: auto;
-        max-height: 10;
+        max-height: 40vh;
         background: $surface;
+        border: none;
+        padding: 0;
+        scrollbar-size: 1 1;
+    }
+
+    AutocompletePopup OptionList > .option-list--option {
+        padding: 0 1;
     }
 
     AutocompletePopup OptionList > .option-list--option-highlighted {
-        background: $primary;
+        background: $boost;
+        color: $text;
+        text-style: bold;
+    }
+
+    AutocompletePopup:ansi OptionList > .option-list--option-highlighted {
+        text-style: bold reverse;
+    }
+
+    AutocompletePopup #completion-hint {
+        height: auto;
+        margin-top: 1;
+        color: $text-muted;
     }
 
     AutocompletePopup #empty-message {
@@ -114,6 +137,7 @@ class AutocompletePopup(ModalScreen[str | None]):
                 id="filter-input"
             )
             yield OptionList(id="options-list")
+            yield Static("↑↓ select · tab/enter insert · esc close", id="completion-hint")
 
     async def on_mount(self):
         """Load initial options."""
@@ -196,6 +220,7 @@ class AutocompletePopup(ModalScreen[str | None]):
             AutocompleteOption("/theme", "/theme", "Change theme"),
             AutocompleteOption("/init", "/init", "Create AGENTS.md"),
             AutocompleteOption("/status", "/status", "Show status"),
+            AutocompleteOption("/debug", "/debug", "Reproduce and verify a bug"),
             AutocompleteOption("/cost", "/cost", "Show cost/usage"),
             AutocompleteOption("/help", "/help", "Show help"),
         ]
@@ -237,9 +262,10 @@ class AutocompletePopup(ModalScreen[str | None]):
         
         # Populate option list
         for opt in self._filtered_options:
-            label = f"{opt.icon} {opt.display}" if opt.icon else opt.display
+            label = Text(f"{opt.icon} {opt.display}" if opt.icon else opt.display,
+                         no_wrap=True, overflow="ellipsis")
             if opt.description:
-                label = f"{label}  [dim]{opt.description}[/dim]"
+                label.append(f"  {opt.description}", style="dim")
             option_list.add_option(Option(label, id=opt.value))
         
         if self._filtered_options:

@@ -3,162 +3,118 @@ title: TUI
 description: Using the codesm terminal user interface.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components"
-
-codesm provides an interactive terminal interface (TUI) for working on your projects with an LLM.
-
-Running codesm starts the TUI for the current directory:
+Start the interactive terminal interface in the current directory:
 
 ```bash
-codesm
+codesm run
 ```
 
-Or start it for a specific directory:
+Or select a project:
 
 ```bash
-codesm /path/to/project
+codesm run /path/to/project
 ```
 
----
+## Transcript
 
-## File References
+The conversation fills the terminal without a sidebar. Messages and tool activity
+appear in order, with the prompt fixed at the bottom. Tool output stays collapsed
+by default. Press **Ctrl+T** to expand or collapse full output, diffs, reasoning
+summaries, and specialist details.
 
-Reference files in your messages using `@`. This does a fuzzy file search:
+Scroll up to read earlier output. New activity follows the conversation only when
+you are already at the bottom.
 
-:::tip
-Use `@` to quickly reference files in your prompts.
-:::
+Drag over a message or tool output to select text, then press **Ctrl+C** to copy
+it. **Esc** clears the selection. Copying a selection keeps active work running.
+Hovering text shows a copy hint in the footer. Terminals that support mouse pointer
+shapes also show an I-beam; GNOME Terminal keeps its own pointer shape.
+
+## File references
+
+Type `@` to open the file picker and insert a path into your prompt:
 
 ```txt frame="none"
 How is auth handled in @src/auth/index.ts?
 ```
 
-The content of the file is automatically added to the conversation.
+You can also include file paths directly, including paths to images you want the
+agent to inspect.
 
----
+## Running commands
 
-## Bash Commands
+Ask the agent to run a command as part of your task:
 
-Start a message with `!` to run a shell command:
-
-```bash frame="none"
-!ls -la
+```txt frame="none"
+Run the tests and investigate any failures.
 ```
 
-The output is added to the conversation as a tool result.
+Shell calls and their results appear in the transcript and follow the configured
+approval rules. Use **Ctrl+T** to inspect the complete output.
 
----
+## Slash commands
 
-## Slash Commands
+Type `/` to open command suggestions, or use **Ctrl+P** for the command palette.
 
-Type `/` followed by a command name to execute actions:
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/new` | Start a new session |
+| `/session` | Browse saved sessions |
+| `/connect` | Connect a provider |
+| `/models` | Select a model |
+| `/mode` | Select Smart or Rush mode |
+| `/smart`, `/rush` | Set the mode directly |
+| `/theme` | Choose a color palette |
+| `/cost` | Inspect session usage and cost |
+| `/status` | Show the current mode, model, and directory |
+| `/debug <problem>` | Start the verified debugging workflow |
+| `/init` | Generate project instructions |
+| `/fork` | Fork the current session |
+| `/branches` | Show session branches |
+| `/audit` | Show the audit log |
 
-```bash frame="none"
-/help
-```
-
-### Available Commands
-
-| Command | Description | Keybind |
-|---------|-------------|---------|
-| `/help` | Show help dialog | `ctrl+x h` |
-| `/new` | Start a new session | `ctrl+x n` |
-| `/sessions` | List sessions | `ctrl+x l` |
-| `/compact` | Summarize context | `ctrl+x c` |
-| `/undo` | Undo last message | `ctrl+x u` |
-| `/redo` | Redo undone message | `ctrl+x r` |
-| `/init` | Create AGENTS.md | `ctrl+x i` |
-| `/models` | List models | `ctrl+x m` |
-| `/themes` | List themes | `ctrl+x t` |
-| `/export` | Export to Markdown | `ctrl+x x` |
-| `/exit` | Exit codesm | `ctrl+x q` |
-
----
+**Terminal** is the default color palette. Theme selection uses `/theme`;
+**Ctrl+T** controls transcript details.
 
 ## Modes
 
-codesm has two agent modes, switchable with **Tab**:
+**Smart** uses your selected model. **Rush** uses the current provider's configured
+fast-model choice when one is available. The footer shows the effective model.
+Use `/mode`, `/smart`, or `/rush`, or press **Tab** while idle.
 
-| Mode | Model | Best For |
-|------|-------|----------|
-| **Smart** | Claude Sonnet 4 | Complex tasks |
-| **Rush** | Claude Haiku 3.5 | Quick, simple tasks |
+These are model choices. Read-only planning is available through the planner
+specialist and `read_only` configuration. See [Agent Modes](/modes) and
+[Agents](/agents).
 
-Rush mode is **67% cheaper** and **50% faster**.
+## Input and queued messages
 
-See [Agent Modes](/modes) for details.
+Type a message and press **Enter** to send it. During active work, **Enter** or
+**Tab** queues the message for the next turn. The current task finishes before the
+queued message runs. **Esc** clears selected text first; otherwise it interrupts
+active work and its workers.
 
----
+The composer is a single-line input. Use ordinary text and file references to
+provide longer instructions; there is no external-editor shortcut.
 
-## Build vs Plan Mode
+## Usage display
 
----
+The footer shows the current mode/model and an estimate of context remaining.
+Use `/cost` for token counts, request counts, estimated usage, and session cost.
+Costs remain unknown for requests without configured pricing.
 
-## Input Modes
-
-### Normal Input
-
-Type your message and press **Enter** to send.
-
-### Multi-line Input
-
-Press **Shift+Enter** for a new line, or use the editor command.
-
-### External Editor
-
-Use `/editor` or `ctrl+x e` to compose in your `$EDITOR`:
-
-<Tabs>
-  <TabItem label="Linux/macOS">
-  ```bash
-  export EDITOR="code --wait"
-  ```
-  </TabItem>
-
-  <TabItem label="Windows">
-  ```powershell
-  $env:EDITOR = "code --wait"
-  ```
-  </TabItem>
-</Tabs>
-
----
-
-## Images
-
-Drag and drop images into the terminal to add them to your prompt.
-
-:::tip
-Images are great for UI mockups, error screenshots, or diagrams.
-:::
-
-Supported formats: PNG, JPEG, GIF, WebP
-
----
-
-## Token Display
-
-The status bar shows:
-- **Token count**: Total tokens in context
-- **Cost estimate**: Estimated cost for the session
-- **Model**: Current model being used
-
-```txt frame="none"
-39,413  20%  ($0.29)
-```
-
----
-
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Switch modes (Build/Plan) |
-| `Enter` | Send message |
-| `Shift+Enter` | New line |
-| `Ctrl+C` | Cancel current operation |
-| `Ctrl+X` | Leader key for commands |
-| `↑/↓` | Navigate message history |
-| `Ctrl+L` | Clear screen |
+| `Enter` | Send a message, or queue it during active work |
+| `Tab` | Queue a message while busy; toggle Smart/Rush mode while idle |
+| `Ctrl+T` | Expand or collapse transcript details |
+| `Esc` | Clear selected text; otherwise interrupt active work |
+| `Ctrl+C` | Copy selected text; otherwise interrupt active work or quit when idle |
+| `Ctrl+Z` | Interrupt active work; quit when idle |
+| `Ctrl+P` | Open the command palette |
+| `Ctrl+N` | Start a new session when idle |
+| `Ctrl+L` | Clear the displayed transcript |
 
-See [Keybinds](/docs/keybinds) for full customization.
+See [Keybinds](/keybinds) for message-copy and dialog controls.

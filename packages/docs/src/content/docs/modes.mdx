@@ -1,183 +1,91 @@
 ---
 title: Agent Modes
-description: Smart and Rush modes for different task types.
+description: Smart and Rush model choices in the terminal.
 ---
 
-codesm supports two agent modes optimized for different task types.
-
----
+The terminal has two model modes. They change the selected model; tool permissions
+and specialist roles are configured separately.
 
 ## Overview
 
-| Mode | Best For | Cost | Speed |
-|------|----------|------|-------|
-| **Smart** | Complex tasks, debugging, architecture | Higher | Standard |
-| **Rush** | Simple edits, quick fixes, small features | **67% cheaper** | **50% faster** |
+| Mode | Model selection | Typical use |
+|------|-----------------|-------------|
+| **Smart** | Your selected base model | Complex tasks, debugging, architecture |
+| **Rush** | The provider's fast-model choice, when available | Simple edits and quick fixes |
 
----
+If a provider has no Rush model, Codesm keeps the base model. The footer always
+shows the effective model. Actual cost and speed depend on the model, provider,
+and task; switching modes does not guarantee a fixed saving.
 
-## Smart Mode (Default)
+## Switching modes
 
-Smart mode uses powerful models for complex reasoning:
+Press **Tab** while idle, or use the mode selector:
 
-- **Anthropic**: Claude Sonnet 4
-- **OpenAI**: GPT-4o
-- **OpenRouter**: Claude Sonnet 4 / GPT-4o
-
-### Best For
-
-- Complex multi-file refactoring
-- Architecture decisions
-- Debugging difficult issues
-- Understanding unfamiliar codebases
-- Writing comprehensive tests
-
----
-
-## Rush Mode
-
-Rush mode uses fast, efficient models:
-
-- **Anthropic**: Claude Haiku 3.5
-- **OpenAI**: GPT-4o-mini
-- **OpenRouter**: Claude Haiku 3.5 / GPT-4o-mini
-
-### Best For
-
-- Quick typo fixes
-- Simple feature additions
-- Straightforward file edits
-- Well-defined tasks with clear instructions
-- Rapid iteration cycles
-
----
-
-## Switching Modes
-
-### Keyboard
-
-Press **Tab** to toggle between modes.
-
-The current mode is shown in the status bar.
-
-### Commands
-
-```bash frame="none"
-/rush
-```
-
-```bash frame="none"
-/smart
-```
-
-### Mode Selector
-
-```bash frame="none"
+```txt frame="none"
 /mode
 ```
 
-Opens a dialog to select the mode.
+You can select either mode directly:
 
----
+```txt frame="none"
+/smart
+/rush
+```
 
-## Configuration
+While work is active, **Tab** queues the text in the composer for the next turn.
+It does not switch modes during that task.
 
-### Default Mode
+Smart is the initial default. Codesm remembers your last mode selection for future
+sessions. Selecting a new base model with `/models` returns to Smart mode.
 
-Set the default mode in your config:
+## Choosing the base model
+
+Choose a model when launching:
+
+```bash
+codesm run --model openai/gpt-5.6-luna
+```
+
+Or set the project default:
 
 ```json title="codesm.json"
 {
-  "mode": "smart"
+  "model": "openai/gpt-5.6-luna"
 }
 ```
 
-Options: `smart`, `rush`
+Rush choices come from the provider catalog. The terminal does not read `mode` or
+`modes` objects from `codesm.json`; use `/mode` for the saved UI preference.
 
-### Custom Models Per Mode
+## When to use each mode
 
-Override the models used for each mode:
+Use Smart for ambiguous tasks, multi-file changes, difficult debugging, or reviews
+that need the model you selected. Try Rush for small edits and well-defined tasks,
+and inspect the result before choosing it for more complex work.
+
+Use `/cost` to inspect actual session usage. Compare repeated evaluations on your
+own tasks when assessing speed and cost; see [CLI](/cli#compare-execution-modes).
+
+## Specialist models
+
+Specialists can use different models through role profiles:
 
 ```json title="codesm.json"
 {
-  "modes": {
-    "smart": {
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514"
-    },
-    "rush": {
-      "provider": "anthropic",
-      "model": "claude-3-5-haiku-20241022"
-    }
+  "agents": {
+    "finder": { "model": "google/gemini-3.8-flash" },
+    "oracle": { "model": "openai/gpt-5.6-sol" }
   }
 }
 ```
 
----
+An explicit role model or routed model can override the parent model. Without an
+override, a specialist inherits the parent model. Set `pin_model: true` to keep
+all calls on the parent model. The runtime does not use `subagent_modes` or
+`inherit_mode` settings. See [Config](/config) for profiles and routing.
 
-## Cost Comparison
+## Planning and permissions
 
-Example costs for a 10,000 token conversation:
-
-| Mode | Model | Input Cost | Output Cost | Total |
-|------|-------|------------|-------------|-------|
-| Smart | Claude Sonnet 4 | $0.03 | $0.15 | ~$0.18 |
-| Rush | Claude Haiku 3.5 | $0.008 | $0.04 | ~$0.05 |
-
-Rush mode is approximately **67% cheaper** for typical tasks.
-
----
-
-## When to Use Each Mode
-
-### Use Smart Mode When
-
-- You need deep reasoning
-- The task is ambiguous or complex
-- You're debugging a subtle bug
-- You want thorough code review
-- The context requires understanding multiple files
-
-### Use Rush Mode When
-
-- The task is straightforward
-- You have clear, specific instructions
-- Speed matters more than depth
-- You're making many small changes
-- Cost is a concern
-
----
-
-## Tips
-
-1. **Start with Rush** for simple tasks - switch to Smart if needed
-2. **Use Smart for planning** - then Rush for execution
-3. **Rush for iteration** - when making incremental changes
-4. **Smart for debugging** - when you need deeper analysis
-
----
-
-## Subagent Mode Inheritance
-
-Subagents spawned via the `task` tool inherit the parent's mode by default:
-
-```json
-{
-  "subagent": {
-    "inherit_mode": true
-  }
-}
-```
-
-Override for specific subagent types:
-
-```json title="codesm.json"
-{
-  "subagent_modes": {
-    "finder": "rush",
-    "oracle": "smart",
-    "coder": "smart",
-    "researcher": "smart"
-  }
-}
-```
+Smart and Rush do not switch between Build and Plan agents. Request the `planner`
+specialist for a plan, or set `read_only: true` to restrict the entire task to
+read-only tools. See [Agents](/agents) for role capabilities.

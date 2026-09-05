@@ -1,231 +1,168 @@
-"""Eval runner.
-
-Takes an EvalTask, runs the setup shell commands, invokes the Agent with an
-instrumented context dict, runs the assertion shell commands, and returns a
-populated EvalReport.
-
-The runner does not modify the Agent or ReAct loop surface directly. It
-relies on two conventions added to the context dict:
-
-  context["eval_events"]   list the ReAct loop appends compaction/error
-                           events to if present.
-  context["eval_usage"]    dict providers may populate with token counts.
-
-Both are backwards compatible: if the key is absent, everything still runs
-normally.
-"""
+"""Run trusted benchmark hooks and an instrumented agent in a fresh workspace."""
 
 import asyncio
-import logging
-import subprocess
-import time
+import hashlib
+from contextlib import aclosing
+import os
 from pathlib import Path
-from typing import Optional
+import shutil
+import signal
+import tempfile
+import time
 
-from codesm.eval.metrics import (
-    AssertionResult,
-    CompactionEvent,
-    EvalReport,
-    ToolErrorEvent,
-)
+from codesm.eval.metrics import AssertionResult, CompactionEvent, EvalReport, ToolErrorEvent
 from codesm.eval.task import EvalTask
 
-logger = logging.getLogger(__name__)
 
-
-def _run_shell(cmd: str, cwd: Path, timeout: int = 60) -> tuple[int, str, str]:
-    """Run one shell command and return (exit_code, stdout, stderr)."""
+async def _run_shell(cmd: str, cwd: Path, timeout: int = 60) -> tuple[int, str, str]:
+    proc = await asyncio.create_subprocess_shell(cmd, cwd=cwd,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
     try:
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired as e:
-        out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-        return 124, out, err + f"\n[timeout after {timeout}s]"
-    except Exception as e:
-        return 1, "", f"[runner error: {e}]"
-
-
-def _provider_from_model(model: str) -> str:
-    """Extract the provider segment from a model id like 'anthropic/claude-...'."""
-    if "/" in model:
-        return model.split("/", 1)[0]
-    return "anthropic"
-
-
-async def run_task(
-    task: EvalTask,
-    task_file: Optional[Path] = None,
-    model_override: Optional[str] = None,
-    directory_override: Optional[Path] = None,
-) -> EvalReport:
-    """Run one eval task end to end and return a populated EvalReport.
-
-    The caller is responsible for printing or persisting the report.
-    """
-    from codesm.agent.agent import Agent
-    from codesm.auth.credentials import CredentialStore
-
-    report = EvalReport(
-        task_name=task.name,
-        task_description=task.description,
-        task_file=str(task_file) if task_file else "",
-    )
-
-    # Resolve working directory
-    if directory_override is not None:
-        workdir = Path(directory_override).resolve()
-    elif task.directory:
-        workdir = Path(task.directory).resolve()
-    else:
-        workdir = Path.cwd()
-
-    if not workdir.exists():
-        workdir.mkdir(parents=True, exist_ok=True)
-
-    # Resolve model
-    model = model_override or task.model
-    if not model:
-        store = CredentialStore()
-        model = store.get_preferred_model() or "anthropic/claude-sonnet-4-20250514"
-    report.model = model
-    report.provider = _provider_from_model(model)
-
-    wall_start = time.time()
-
-    # 1. Setup shell commands
-    setup_start = time.time()
-    for cmd in task.setup:
-        code, stdout, stderr = _run_shell(cmd, workdir, timeout=60)
-        if code != 0:
-            report.setup_ok = False
-            report.error = f"Setup failed (exit {code}): {cmd}\nstderr: {stderr.strip()}"
-            report.setup_ms = int((time.time() - setup_start) * 1000)
-            report.wall_clock_ms = int((time.time() - wall_start) * 1000)
-            return report
-    report.setup_ms = int((time.time() - setup_start) * 1000)
-
-    # 2. Run the agent with an instrumented context
-    eval_events: list[dict] = []
-    eval_usage: dict = {}
-
-    agent_start = time.time()
-    try:
-        agent = Agent(
-            directory=workdir,
-            model=model,
-            max_iterations=task.max_iterations,
-        )
-
-        # Inject the two instrumentation hooks so Agent.chat can flow them
-        # into the ReAct loop context dict. Agent.__init__ declares these.
-        agent._eval_events = eval_events
-        agent._eval_usage = eval_usage
-
-        full_response = ""
-        tool_counts: dict[str, int] = {}
-
-        async def run_agent():
-            nonlocal full_response
-            async for chunk in agent.chat(task.prompt):
-                # Agent.chat yields StreamChunk; use getattr because the
-                # declared return type in agent.py is AsyncIterator[str].
-                ctype = getattr(chunk, "type", None)
-                ccontent = getattr(chunk, "content", "") or ""
-                cname = getattr(chunk, "name", None)
-                if ctype == "text" and ccontent:
-                    full_response += ccontent
-                elif ctype == "tool_call":
-                    tool_name = cname or "unknown"
-                    tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
-                # tool_result sniffing removed: the ReAct loop now emits
-                # tool_error events directly, drained below.
-
         try:
-            await asyncio.wait_for(run_agent(), timeout=task.timeout)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout)
+            return proc.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
         except asyncio.TimeoutError:
-            report.agent_ok = False
-            report.error = f"Agent timed out after {task.timeout}s"
-
-        await agent.cleanup()
-
-        report.final_response = full_response[:4000]
-        report.tool_calls = tool_counts
-
-    except Exception as e:
-        logger.exception("Agent run failed")
-        report.agent_ok = False
-        report.error = f"Agent crashed: {e}"
+            return 124, "", f"Timeout after {timeout}s"
     finally:
-        report.agent_ms = int((time.time() - agent_start) * 1000)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await proc.wait()
 
-    # Drain instrumentation events
-    for ev in eval_events:
-        kind = ev.get("type")
+
+async def run_task(task: EvalTask, task_file: Path | None = None,
+                   model_override: str | None = None, directory_override: Path | None = None,
+                   variant: str | None = None, config=None) -> EvalReport:
+    """Copy an optional fixture directory; never run setup in the source checkout.
+
+    Shell hooks are trusted code, not sandboxed: use relative paths in task files.
+    """
+    from codesm.config import Config
+    source = directory_override or task.directory
+    source = Path(source).resolve() if source else None
+    settings = (config or Config.load(directory=source or (task_file.parent if task_file else Path.cwd()))).model_copy(deep=True)
+    if variant is not None:
+        if variant not in ("single", "specialists", "adaptive"):
+            raise ValueError(f"Unknown evaluation variant: {variant}")
+        settings.delegation = variant
+    with tempfile.TemporaryDirectory(prefix="codesm-eval-") as temp:
+        workdir = Path(temp) / "workspace"
+        if source:
+            if not source.is_dir():
+                raise ValueError(f"Fixture directory does not exist: {source}")
+            shutil.copytree(source, workdir, ignore=shutil.ignore_patterns(
+                ".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", ".lavish"))
+        else:
+            workdir.mkdir()
+        return await _run(task, workdir, settings, task_file, model_override)
+
+
+async def _run(task, workdir, config, task_file, model_override):
+    from codesm.agent.agent import Agent
+    from codesm.diff_preview import set_diff_preview_enabled
+    report = EvalReport(task_name=task.name, task_description=task.description,
+                        task_file=str(task_file or ""), variant=config.delegation)
+    profile = config.agents.get("main")
+    report.model = model_override or task.model or (profile.model if profile else None) or config.model
+    report.provider = report.model.split("/", 1)[0]
+    wall = time.monotonic()
+    started = time.monotonic()
+    for command in task.setup:
+        code, _, stderr = await _run_shell(command, workdir)
+        if code:
+            report.setup_ok = False
+            report.error = f"Setup failed ({code}): {command}\n{stderr[:2000]}"
+            report.setup_ms = int((time.monotonic() - started) * 1000)
+            report.wall_clock_ms = int((time.monotonic() - wall) * 1000)
+            return report
+    report.setup_ms = int((time.monotonic() - started) * 1000)
+    protected = {}
+    for name in task.protected_files:
+        path = (workdir / name).resolve()
+        if not path.is_relative_to(workdir) or not path.is_file():
+            raise ValueError(f"Protected fixture must be an existing workspace file: {name}")
+        protected[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    events, usage = [], {}
+    response = []
+    agent = None
+    started = time.monotonic()
+    try:
+        agent = Agent(directory=workdir, model=report.model, config=config, max_iterations=task.max_iterations,
+                      mcp_config_path=workdir / "mcp-servers.json")
+        set_diff_preview_enabled(False, agent.session.id)
+        agent._eval_events, agent._eval_usage = events, usage
+
+        async def execute():
+            prompt = "/debug " + task.prompt if task.debug else task.prompt
+            async with aclosing(agent.chat(prompt)) as stream:
+                async for chunk in stream:
+                    if chunk.type == "text":
+                        response.append(chunk.content)
+                    elif chunk.type == "run_status":
+                        report.completion_status = chunk.content
+        await asyncio.wait_for(execute(), task.timeout)
+        report.agent_ok = report.completion_status in ("completed", "verified")
+    except asyncio.TimeoutError:
+        report.agent_ok = False
+        report.completion_status = "cancelled"
+        report.error = f"Agent timed out after {task.timeout}s"
+    except Exception as error:
+        report.agent_ok = False
+        report.completion_status = "failed"
+        report.error = f"Agent crashed: {error}"
+    finally:
+        if agent is not None:
+            await agent.cleanup()
+        report.agent_ms = int((time.monotonic() - started) * 1000)
+    report.final_response = "".join(response)
+    for event in events:
+        kind = event.get("type")
         if kind == "iteration_start":
-            report.iterations = max(report.iterations, int(ev.get("n", 0)))
+            report.iterations += 1
         elif kind == "compaction":
-            report.compaction_events.append(
-                CompactionEvent(
-                    iteration=int(ev.get("iteration", 0)),
-                    tokens_before=int(ev.get("tokens_before", 0)),
-                    tokens_after=int(ev.get("tokens_after", 0)),
-                )
-            )
+            report.compaction_events.append(CompactionEvent(event.get("iteration", 0),
+                event.get("tokens_before", 0), event.get("tokens_after", 0)))
         elif kind == "tool_error":
-            report.tool_errors.append(
-                ToolErrorEvent(
-                    iteration=int(ev.get("iteration", 0)),
-                    tool=str(ev.get("tool", "unknown")),
-                    message=str(ev.get("message", ""))[:500],
-                    recovered=bool(ev.get("recovered", False)),
-                )
-            )
+            report.tool_errors.append(ToolErrorEvent(event.get("iteration", 0),
+                event.get("tool", "unknown"), event.get("message", "")[:500], event.get("recovered", False)))
+        elif kind == "tool_result":
+            name = event.get("tool", "unknown")
+            report.tool_calls[name] = report.tool_calls.get(name, 0) + 1
         elif kind == "permission_denied":
             report.permission_denials += 1
         elif kind == "malformed_tool_call":
             report.malformed_tool_calls += 1
         elif kind == "mark_uncertain":
             report.mark_uncertain_count += 1
-            sev = str(ev.get("severity", "")).lower()
-            if sev in report.mark_uncertain_by_severity:
-                report.mark_uncertain_by_severity[sev] += 1
+            severity = event.get("severity", "")
+            if severity in report.mark_uncertain_by_severity:
+                report.mark_uncertain_by_severity[severity] += 1
         elif kind == "max_iterations":
             report.max_iterations_hit = True
-
-    # Drain usage if the provider wrote any
-    report.tokens_in = int(eval_usage.get("tokens_in", 0))
-    report.tokens_out = int(eval_usage.get("tokens_out", 0))
-
-    # Materialise the agent's final response as a file in the workdir so
-    # shell assertions can grep it. Benchmarks like ambiguous-requirements
-    # and adversarial-secret rely on this to observe the model's behavior.
-    response_path = workdir / ".codesm-eval-response.txt"
-    try:
-        response_path.write_text(report.final_response or "")
-    except Exception as e:
-        logger.warning(f"Could not write eval response artifact: {e}")
-
-    # 3. Run assertion shell commands
-    assertion_start = time.time()
-    for cmd in task.assertion:
-        code, stdout, stderr = _run_shell(cmd, workdir, timeout=60)
-        report.assertions.append(
-            AssertionResult(
-                command=cmd,
-                exit_code=code,
-                stdout=stdout[:2000],
-                stderr=stderr[:2000],
-            )
-        )
-    report.assertion_ms = int((time.time() - assertion_start) * 1000)
-
-    report.wall_clock_ms = int((time.time() - wall_start) * 1000)
+        elif kind == "usage":
+            report.requests += 1
+            report.estimated_requests += int(event.get("estimated", False))
+            report.unpriced_requests += int(not event.get("cost_known", False))
+            report.cost_usd += event.get("cost", 0)
+        elif kind == "subagent_done":
+            report.subagents += 1
+            status = event.get("status", "unknown")
+            report.subagent_statuses[status] = report.subagent_statuses.get(status, 0) + 1
+    if report.unpriced_requests or not report.requests:
+        report.cost_usd = None
+    report.tokens_in, report.tokens_out = usage.get("tokens_in", 0), usage.get("tokens_out", 0)
+    # Assertions see the complete response, not a truncated display preview.
+    (workdir / ".codesm-eval-response.txt").write_text(report.final_response)
+    report.final_response = report.final_response[-12000:]
+    started = time.monotonic()
+    for name, digest in protected.items():
+        path = (workdir / name).resolve()
+        intact = path.is_relative_to(workdir) and path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest
+        report.assertions.append(AssertionResult(f"Preserve {name}", 0 if intact else 1))
+    for command in task.assertion:
+        code, stdout, stderr = await _run_shell(command, workdir)
+        report.assertions.append(AssertionResult(command, code, stdout[:2000], stderr[:2000]))
+    report.assertion_ms = int((time.monotonic() - started) * 1000)
+    report.wall_clock_ms = int((time.monotonic() - wall) * 1000)
     return report

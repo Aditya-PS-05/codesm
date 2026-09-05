@@ -115,6 +115,8 @@ class DiffPreview:
         if old_content == new_content:
             return DiffPreviewResponse.SKIP
         
+        if self._on_request is None:
+            raise DiffPreviewCancelledError("Edit preview requires an interactive session")
         request = DiffPreviewRequest(
             id=str(uuid.uuid4()),
             file_path=file_path,
@@ -148,7 +150,7 @@ class DiffPreview:
             return response
             
         except asyncio.CancelledError:
-            raise DiffPreviewCancelledError(request, "Diff preview was cancelled")
+            raise
         finally:
             if session_id in self._pending and request.id in self._pending[session_id]:
                 del self._pending[session_id][request.id]

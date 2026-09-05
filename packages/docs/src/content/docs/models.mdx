@@ -1,254 +1,100 @@
 ---
 title: Models
-description: Configure and switch between AI models.
+description: Discover, select, and configure current coding models.
 ---
 
-codesm uses a multi-model architecture with task-specialized models for optimal performance and cost.
+Codesm accepts exact `provider/model-id` strings. The picker is a convenience;
+a new model does not need a codesm release before you can use its ID.
 
----
-
-## Listing Models
-
-View available models:
-
-```bash frame="none"
-/models
-```
-
-This shows models from all configured providers.
-
----
-
-## Switching Models
-
-### In TUI
-
-Use the models command:
-
-```bash frame="none"
-/models
-```
-
-Select from the list.
-
-### Command Line
+## List and refresh models
 
 ```bash
-codesm --model claude-sonnet-4-20250514 --provider anthropic
+codesm models
+codesm models --provider kimi
+codesm models --refresh --provider openai
+codesm models --refresh --provider openrouter --json
 ```
 
-### In Config
+Without `--refresh`, the command uses built-in examples and your configured model
+IDs. Refresh queries connected providers and OpenRouter's public catalog. Failures
+are reported per provider and retain its offline entries; the CLI exits with code
+1 if any requested refresh fails. JSON output contains `models` and `errors`.
+A refreshed list comes from the provider but does not grant account access.
+
+In the TUI, `/models` displays the same catalog and refreshes it in the background.
+Press `ctrl+r` to refresh again. Search by name or exact ID, or type a full
+`provider/model-id` and select it even if it is not listed. `/connect` saves the
+selected provider's API key.
+
+## Select a model
+
+```bash
+codesm run --model openai/gpt-5.6-luna
+codesm run --model anthropic/claude-sonnet-5
+codesm run --model kimi/kimi-k3
+codesm run --model zai/glm-5.3
+codesm chat "Explain this project" --model google/gemini-3.8-flash
+```
+
+Recognized bare model prefixes also work, such as `gpt-6-astra`, `kimi-k3`,
+`glm-5.3`, and `claude-fable-5-1`. Use a provider prefix when choosing a gateway or
+custom deployment. `openrouter/anthropic/claude-fable-5.1` is an OpenRouter model
+ID; `anthropic/claude-fable-5-1` is the direct Anthropic ID.
+
+For a project default:
 
 ```json title="codesm.json"
 {
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-20250514"
+  "model": "openai/gpt-5.6-terra"
 }
 ```
 
----
+The CLI `--model` option overrides the default. Existing explicit models and
+saved preferences remain usable. New installations default to Claude Sonnet 5.
 
-## Recommended Models
-
-### For Coding Tasks
-
-| Model | Provider | Notes |
-|-------|----------|-------|
-| `claude-sonnet-4-20250514` | Anthropic | Best for complex coding |
-| `claude-3-5-sonnet-20241022` | Anthropic | Great balance |
-| `gpt-4.1` | OpenAI | Strong reasoning |
-| `codestral` | Ollama | Free, local |
-
-### For Quick Tasks
-
-| Model | Provider | Notes |
-|-------|----------|-------|
-| `claude-3-5-haiku-20241022` | Anthropic | Fast, cheap |
-| `gpt-4o-mini` | OpenAI | Fast, cheap |
-| `llama3.1:8b` | Ollama | Free, local |
-
----
-
-## Model Configuration
-
-### Per-Project Models
+## Specialist models and output allowances
 
 ```json title="codesm.json"
 {
-  "model": "claude-sonnet-4-20250514",
-  "provider": "anthropic"
-}
-```
-
-### Per-Agent Models
-
-```json title="codesm.json"
-{
+  "model": "openai/gpt-5.6-luna",
   "agents": {
-    "build": {
-      "model": "claude-sonnet-4-20250514"
-    },
-    "plan": {
-      "model": "claude-3-5-haiku-20241022"
-    }
+    "main": {"reasoning_effort": "low", "max_output_tokens": 8192},
+    "planner": {"model": "anthropic/claude-sonnet-5"},
+    "oracle": {"model": "openai/gpt-6-astra", "reasoning_effort": "high"},
+    "coder": {"model": "kimi/kimi-k3", "reasoning_effort": "low", "max_output_tokens": 16384}
   }
 }
 ```
 
-### Sub-agent Models
+Configure the credentials and account access needed by each selected provider.
+Output tokens include reasoning for reasoning models, so a low allowance can
+end before the answer. `context_tokens` defaults to 128,000; set it explicitly if
+you want a different context budget. Role settings and shared request/token/dollar
+limits are described in [Config](/config). Unknown model prices stay unknown;
+add current `model_prices` before enforcing a dollar budget.
 
-Use cheaper models for sub-agents:
+Rush mode selects a faster model within the current provider when a mapping is
+available. Custom providers with no rush mapping keep the selected model.
 
-```json title="codesm.json"
-{
-  "subagent": {
-    "model": "claude-3-5-haiku-20241022",
-    "provider": "anthropic"
-  }
-}
-```
+## Custom deployments
 
----
-
-## Custom Model Endpoints
-
-### OpenAI-Compatible APIs
+Add an OpenAI-compatible endpoint and optional picker entries:
 
 ```json title="codesm.json"
 {
   "providers": {
-    "custom": {
-      "type": "openai",
-      "base_url": "https://api.example.com/v1",
-      "api_key_env": "CUSTOM_API_KEY",
-      "models": [
-        { "id": "custom-model", "name": "Custom Model" }
-      ]
+    "local-server": {
+      "base_url": "http://localhost:8000/v1",
+      "api_key": "not-needed",
+      "models": ["my-local-coder"]
     }
   }
 }
 ```
 
-### Azure OpenAI
+`codesm run --model local-server/my-local-coder` now uses that endpoint. A server
+that implements `/models` can be queried with
+`codesm models --refresh --provider local-server`.
 
-```json title="codesm.json"
-{
-  "providers": {
-    "azure": {
-      "type": "azure",
-      "endpoint": "https://your-resource.openai.azure.com",
-      "api_key_env": "AZURE_OPENAI_KEY",
-      "deployment": "gpt-4"
-    }
-  }
-}
-```
-
----
-
-## Cost Tracking
-
-Monitor costs per model:
-
-```json title="codesm.json"
-{
-  "limits": {
-    "session_max_cost": 5.00,
-    "warn_at_cost": 2.00
-  }
-}
-```
-
-View current usage in the TUI status bar:
-
-```txt frame="none"
-39,413 tokens (~$0.29)
-```
-
----
-
-## Model Routing
-
-Automatically select models based on task:
-
-```json title="codesm.json"
-{
-  "model_routing": {
-    "enabled": true,
-    "default": "claude-sonnet-4-20250514",
-    "quick_tasks": "claude-3-5-haiku-20241022",
-    "complex_tasks": "claude-sonnet-4-20250514"
-  }
-}
-```
-
----
-
-## Multi-Model Architecture
-
-codesm uses specialized models across three tiers:
-
-### Tier 1: Agent Modes
-
-Primary interaction models controlled via [Agent Modes](/modes):
-
-| Mode | Anthropic | OpenAI | Use Case |
-|------|-----------|--------|----------|
-| Smart | Claude Sonnet 4 | GPT-4o | Complex reasoning |
-| Rush | Claude Haiku 3.5 | GPT-4o-mini | Fast, cheap tasks |
-
-### Tier 2: Feature Models
-
-Low-latency models for UI/UX features:
-
-| Feature | Model | Provider | Purpose |
-|---------|-------|----------|---------|
-| Tab Completion | Custom fine-tuned | - | Autocomplete suggestions |
-| Code Review | Gemini 2.5 Pro | OpenRouter | Bug detection, review |
-| Thread Titling | Claude 3.5 Haiku | OpenRouter | Fast title generation |
-| Media Analysis | Gemini 2.0 Flash | OpenRouter | Image/PDF analysis |
-
-### Tier 3: Specialized Subagents
-
-Background processing with task-optimized models:
-
-| Subagent | Model | Purpose |
-|----------|-------|---------|
-| Oracle | GPT-5 / o1 | Complex reasoning, debugging |
-| Finder | Gemini 2.5 Flash | High-speed code search |
-| Librarian | Claude Sonnet 4 | Multi-repo research |
-| Coder | Claude Sonnet 4 | Code generation |
-| Reviewer | Claude Sonnet 4 | Code review |
-
-See [Orchestration](/orchestration) for details on using subagents.
-
----
-
-## Task Router Configuration
-
-Configure how tasks are routed to models:
-
-```json title="codesm.json"
-{
-  "task_router": {
-    "enabled": true,
-    "rules": [
-      {
-        "pattern": "find|search|locate",
-        "subagent": "finder",
-        "model": "gemini-2.5-flash"
-      },
-      {
-        "pattern": "review|analyze|audit",
-        "subagent": "reviewer",
-        "model": "claude-sonnet-4-20250514"
-      },
-      {
-        "pattern": "implement|create|build",
-        "subagent": "coder",
-        "model": "claude-sonnet-4-20250514"
-      }
-    ]
-  }
-}
-```
+See [Providers](/providers) for the verified model examples, API-key variables,
+endpoint overrides, and links to official catalogs.

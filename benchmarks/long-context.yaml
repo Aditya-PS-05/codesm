@@ -1,10 +1,8 @@
 name: "long-context"
 description: "Large file forces context compaction or selective reading. Surfaces context-management failure modes."
 
-directory: /tmp/codesm-eval-longctx
 
 setup:
-  - find . -mindepth 1 -delete || true
   # Generate a ~3000-function Python file. 82 functions will contain the
   # substring "banana" (indices where i % 37 == 0, for i in [0, 2999]).
   # Each function carries a padded docstring so the file crosses the

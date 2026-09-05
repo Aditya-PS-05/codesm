@@ -38,7 +38,7 @@ class EditTool(Tool):
         import time
         start_time = time.time()
         
-        path = Path(args["path"])
+        path = Path(context.get("cwd", ".")) / Path(args["path"]).expanduser()
         old_content = args["old_content"]
         new_content = args["new_content"]
         dry_run = args.get("dry_run", False)
@@ -48,7 +48,7 @@ class EditTool(Tool):
             dry_run = True
         
         session = context.get("session")
-        session_id = session.id if session else "default"
+        session_id = session.id if session else context.get("session_id", "default")
         
         # Audit log the tool call
         try:
@@ -130,8 +130,8 @@ class EditTool(Tool):
                 return f"Edit skipped by user: {path.name}"
             except DiffPreviewCancelledError:
                 return f"Edit cancelled by user"
-            except Exception:
-                pass  # If diff preview fails, proceed anyway
+            except Exception as error:
+                return f"Error: Could not confirm edit: {error}"
 
             # Write the file
             path.write_text(updated)

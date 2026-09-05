@@ -37,6 +37,10 @@ class TokenEstimator:
             return 0
 
         tokens = 6  # Base overhead per message (role, formatting, etc.)
+        if msg.get("response_items"):
+            return tokens + self.estimate_text(json.dumps(msg["response_items"]))
+        if msg.get("chat_response"):
+            tokens += self.estimate_text(json.dumps(msg["chat_response"]))
 
         # Handle content
         content = msg.get("content")
@@ -310,6 +314,12 @@ class ContextManager:
                 ]
                 if len(filtered) != len(tool_calls):
                     msg_copy = dict(msg)
+                    # Raw Responses items would replay calls removed by compaction.
+                    msg_copy.pop("response_items", None)
+                    msg_copy.pop("response_model", None)
+                    msg_copy.pop("response_provider", None)
+                    msg_copy.pop("response_prefix", None)
+                    msg_copy.pop("chat_response", None)
                     if filtered:
                         msg_copy["tool_calls"] = filtered
                     else:

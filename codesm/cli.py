@@ -25,6 +25,8 @@ Commands:
 
   run          Start the codesm agent (interactive TUI)
   chat         Send a single message (non-interactive)
+  debug        Reproduce, diagnose, and verify a bug
+  models       List model IDs; --refresh queries provider catalogs
   eval         Run a coding-model eval task from a YAML file and print JSON report
   serve        Start HTTP API server
   init         Initialize project with AGENTS.md
@@ -44,7 +46,13 @@ Environment variables:
 
   ANTHROPIC_API_KEY      API key for Anthropic Claude models
   OPENAI_API_KEY         API key for OpenAI models  
-  CODESM_MODEL           Default model to use (e.g., anthropic/claude-sonnet-4-20250514)
+  MOONSHOT_API_KEY       API key for Kimi models
+  ZAI_API_KEY            API key for GLM models
+  GEMINI_API_KEY         API key for Google Gemini
+  DEEPSEEK_API_KEY       API key for DeepSeek
+  XAI_API_KEY            API key for xAI Grok
+  MISTRAL_API_KEY        API key for Mistral
+  OPENROUTER_API_KEY     API key for OpenRouter's multi-provider catalog
   CODESM_LOG_LEVEL       Set log level (error, warn, info, debug)
   CODESM_CONFIG          Path to config file (default: ~/.config/codesm/config.json)
 
@@ -191,6 +199,48 @@ def main_callback(
 
 
 @app.command()
+def models(
+    provider: str = typer.Option(None, "--provider", "-p", help="Filter by provider, e.g. openai, kimi, zai, openrouter"),
+    refresh: bool = typer.Option(False, "--refresh", help="Fetch current models from connected providers and OpenRouter"),
+    json_output: bool = typer.Option(False, "--json", help="Print model IDs and discovery errors as JSON"),
+    directory: Path = typer.Option(Path("."), "--dir", "-d", help="Project configuration directory"),
+):
+    """List coding/chat models. Any exact provider/model ID can also be used with --model."""
+    import asyncio
+    import json
+    from rich.console import Console
+    from rich.table import Table
+    from codesm.config import Config
+    from codesm.provider.catalog import canonical_provider, discover_models, model_catalog, provider_specs
+
+    config = Config.load(directory=directory)
+    if provider:
+        provider = canonical_provider(provider)
+        if provider not in provider_specs(config):
+            raise typer.BadParameter(f"Unknown provider: {provider}. Configure providers.{provider}.base_url first.")
+    if refresh:
+        entries, errors = asyncio.run(discover_models(config, provider))
+    else:
+        entries, errors = model_catalog(config), {}
+        if provider:
+            entries = [entry for entry in entries if entry["id"].startswith(provider + "/")]
+    if json_output:
+        typer.echo(json.dumps({"models": entries, "errors": errors}, indent=2))
+    else:
+        table = Table("Model ID", "Provider", "Source")
+        for entry in entries:
+            table.add_row(entry["id"], entry["provider"], entry["source"])
+        Console().print(table)
+        typer.echo("Use: codesm run --model provider/model-id")
+        if not refresh:
+            typer.echo("Built-in entries are suggestions; use --refresh to check provider catalogs.")
+        for name, error in errors.items():
+            typer.echo(f"Could not refresh {name} ({error}); showing offline entries. Check credentials, endpoint, and network.", err=True)
+    if errors:
+        raise typer.Exit(1)
+
+
+@app.command()
 def run(
     directory: Path = typer.Argument(
         Path("."),
@@ -227,8 +277,11 @@ def run(
 
     # Use preferred model from config if no model specified
     if model is None:
+        from codesm.config import Config
+        config = Config.load(directory=directory)
         store = CredentialStore()
-        model = store.get_preferred_model() or "anthropic/claude-sonnet-4-20250514"
+        profile = config.agents.get("main")
+        model = (profile.model if profile else None) or (config.model if "model" in config.model_fields_set else store.get_preferred_model()) or config.model
 
     app = CodesmApp(directory=directory, model=model, session_id=session)
     app.run()
@@ -261,20 +314,40 @@ def chat(
 
     # Use preferred model from config if no model specified
     if model is None:
+        from codesm.config import Config
+        config = Config.load(directory=directory)
         store = CredentialStore()
-        model = store.get_preferred_model() or "anthropic/claude-sonnet-4-20250514"
+        profile = config.agents.get("main")
+        model = (profile.model if profile else None) or (config.model if "model" in config.model_fields_set else store.get_preferred_model()) or config.model
 
     async def run_chat():
+        from codesm.diff_preview import set_diff_preview_enabled
+        from contextlib import aclosing
+        set_diff_preview_enabled(False)
         agent = Agent(directory=directory, model=model)
-        async for chunk in agent.chat(message):
-            # chunk is a StreamChunk object, extract the content
-            if hasattr(chunk, 'content'):
-                print(chunk.content, end="", flush=True)
-            else:
-                print(chunk, end="", flush=True)
-        print()
+        try:
+            async with aclosing(agent.chat(message)) as stream:
+                async for chunk in stream:
+                    if chunk.type == "text":
+                        print(chunk.content, end="", flush=True)
+                    elif chunk.type == "run_status":
+                        print(f"\nStatus: {chunk.content}")
+            print()
+        finally:
+            await agent.cleanup()
+            set_diff_preview_enabled(True)
 
     asyncio.run(run_chat())
+
+
+@app.command()
+def debug(
+    message: str = typer.Argument(..., help="Bug description and reproduction command, if known"),
+    directory: Path = typer.Option(Path("."), "--dir", "-d"),
+    model: str = typer.Option(None, "--model", "-m"),
+):
+    """Reproduce a bug, track hypotheses, and verify the original failing check."""
+    chat("/debug " + message, directory=directory, model=model, dangerously_skip_permissions=False)
 
 
 @app.command()
@@ -364,6 +437,8 @@ def eval_cmd(
     directory: Path = typer.Option(None, "--dir", "-d", help="Override the task's working directory"),
     output: Path = typer.Option(None, "--output", "-o", help="Write full JSON report to this path"),
     pretty: bool = typer.Option(False, "--pretty", help="Print a human readable summary before the JSON"),
+    variants: str = typer.Option(None, "--variants", help="Compare single,specialists,adaptive execution modes"),
+    repeat: int = typer.Option(1, "--repeat", min=1, help="Repeat each model and variant from a fresh starting state"),
     all_providers: bool = typer.Option(
         False,
         "--all-providers",
@@ -402,11 +477,16 @@ def eval_cmd(
         raise typer.Exit(2)
 
     # Comparison mode: --all-providers or --providers
-    if all_providers or providers:
+    if all_providers or providers or variants or repeat > 1:
         if providers:
             models = [m.strip() for m in providers.split(",") if m.strip()]
-        else:
+        elif all_providers:
             models = list(DEFAULT_PROVIDER_MODELS)
+        else:
+            models = [model] if model else None
+        variant_list = [v.strip() for v in variants.split(",")] if variants else None
+        if variant_list and any(v not in ("single", "specialists", "adaptive") for v in variant_list):
+            raise typer.BadParameter("variants must be single,specialists,adaptive")
 
         async def run_compare():
             return await run_comparison(
@@ -414,6 +494,8 @@ def eval_cmd(
                 task_file=task_file,
                 models=models,
                 directory_override=directory,
+                variants=variant_list,
+                repeat=repeat,
             )
 
         result = asyncio.run(run_compare())

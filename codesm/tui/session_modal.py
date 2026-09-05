@@ -5,6 +5,7 @@ from textual.screen import ModalScreen
 from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Input
 from textual.binding import Binding
+from rich.text import Text
 
 
 class SessionListItem(Static):
@@ -21,7 +22,7 @@ class SessionListItem(Static):
         self._selected = False
         self._pending_delete = False
 
-    def render(self) -> str:
+    def render(self) -> Text:
         from datetime import datetime
         
         # Format the date nicely
@@ -38,15 +39,19 @@ class SessionListItem(Static):
         topic_badge = ""
         if self.topics and self.topics.get("primary"):
             primary = self.topics["primary"]
-            topic_badge = f" [cyan]#{primary}[/]"
-        
-        if self._pending_delete:
-            return f"  [bold white]{self.title}[/]\n  [white]Press ctrl+d again to confirm delete[/]"
-        return f"  [bold]{self.title}[/]{topic_badge}\n  [dim]{date_str}[/]"
+            topic_badge = f" #{primary}"
+
+        text = Text("› " if self._selected else "  ", no_wrap=True, overflow="ellipsis")
+        text.append(self.title, style="bold")
+        text.append(topic_badge, style="dim")
+        detail = "Press ctrl+d again to delete" if self._pending_delete else date_str
+        text.append(f"\n  {detail}", style="bold" if self._pending_delete else "dim")
+        return text
 
     def set_selected(self, selected: bool):
         self._selected = selected
         self.set_class(selected, "-selected")
+        self.refresh()
 
     def set_pending_delete(self, pending: bool):
         self._pending_delete = pending
@@ -63,16 +68,20 @@ class SessionRenameModal(ModalScreen):
 
     CSS = """
     SessionRenameModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 60;
+        width: 76;
+        max-width: 100%;
         height: auto;
+        max-height: 100%;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
+        margin: 0 2 4 2;
     }
 
     #modal-header {
@@ -93,12 +102,14 @@ class SessionRenameModal(ModalScreen):
 
     #rename-input {
         margin: 1 0;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #rename-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #footer-hint {
@@ -145,17 +156,20 @@ class SessionListModal(ModalScreen):
 
     CSS = """
     SessionListModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 70;
-        height: auto;
-        max-height: 80%;
+        width: 76;
+        max-width: 100%;
+        height: 24;
+        max-height: 100%;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
+        margin: 0 2 4 2;
     }
 
     #modal-header {
@@ -175,8 +189,9 @@ class SessionListModal(ModalScreen):
     }
 
     #session-list {
-        height: auto;
-        max-height: 20;
+        height: 1fr;
+        min-height: 1;
+        scrollbar-size: 1 1;
         padding: 0;
         scrollbar-gutter: stable;
     }
@@ -191,43 +206,32 @@ class SessionListModal(ModalScreen):
     }
 
     SessionListItem.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
+    }
+
+    SessionListItem.-selected:ansi {
+        text-style: reverse;
     }
 
     SessionListItem.-pending-delete {
-        background: $error;
-        color: #ffffff;
-    }
-
-    SessionListItem.-pending-delete Static {
-        color: #ffffff;
-    }
-
-    SessionListItem.-selected .session-title {
-        color: $background;
+        background: $boost;
+        color: $error;
         text-style: bold;
     }
 
-    SessionListItem.-selected .session-date {
-        color: $background;
-    }
-
     #modal-footer {
-        height: 1;
+        height: auto;
         margin-top: 1;
         color: $text-muted;
     }
 
-    #modal-footer Static {
-        margin-right: 2;
-    }
     """
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
         Binding("enter", "select", "Select", show=False),
         Binding("ctrl+d", "delete_session", "Delete", show=False),
         Binding("ctrl+r", "rename_session", "Rename", show=False),
@@ -246,8 +250,7 @@ class SessionListModal(ModalScreen):
                 yield Static("Select session", id="modal-title")
                 yield Static("esc", id="esc-hint")
             yield VerticalScroll(id="session-list")
-            with Horizontal(id="modal-footer"):
-                yield Static("[bold]enter[/] load  [bold]ctrl+r[/] rename  [bold]ctrl+d[/] delete")
+            yield Static("enter load · ctrl+r rename · ctrl+d delete", id="modal-footer")
 
     def on_mount(self):
         self._build_list()
@@ -296,7 +299,7 @@ class SessionListModal(ModalScreen):
         self.visible_items[self.selected_index].set_selected(False)
         self.selected_index = (self.selected_index - 1) % len(self.visible_items)
         self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
 
     def action_move_down(self):
         if not self.visible_items:
@@ -305,7 +308,7 @@ class SessionListModal(ModalScreen):
         self.visible_items[self.selected_index].set_selected(False)
         self.selected_index = (self.selected_index + 1) % len(self.visible_items)
         self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
 
     def action_select(self):
         if self.visible_items:

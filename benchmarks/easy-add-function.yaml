@@ -1,10 +1,8 @@
 name: "easy-add-function"
 description: "Baseline: add a trivial function. Every competent agent should pass this."
 
-directory: /tmp/codesm-eval-easy
 
 setup:
-  - find . -mindepth 1 -delete || true
   - |
     cat > math_utils.py <<'EOF'
     # Put the add function here.

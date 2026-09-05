@@ -270,11 +270,6 @@ Use after running 'refactor' to implement the suggested improvements."""
             context_before = ""
             context_after = ""
         
-        # Use LLM to generate the refactored code
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            return "Error: OPENROUTER_API_KEY not set"
-        
         prompt = f"""Apply this refactoring suggestion to the code:
 
 SUGGESTION: {suggestion}
@@ -292,29 +287,9 @@ Provide the refactored code that implements this suggestion.
 Only output the refactored code, no explanations.
 Maintain the same indentation and style as the original."""
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "anthropic/claude-sonnet-4-20250514",
-                    "messages": [
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 4096,
-                },
-            )
-            
-            if response.status_code != 200:
-                return f"Error: API error {response.status_code}"
-            
-            data = response.json()
-            refactored = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        
+        from codesm.provider.base import complete
+        refactored = await complete("Refactor only the provided code.", prompt)
+
         # Clean up the response (remove markdown code blocks if present)
         refactored = refactored.strip()
         if refactored.startswith("```"):

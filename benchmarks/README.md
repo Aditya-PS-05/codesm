@@ -176,3 +176,42 @@ selected to:
 
 If you are extending the corpus, stick to those criteria. A task that
 needs a judge to score it belongs somewhere else.
+
+## Repeated execution-mode comparisons
+
+```bash
+codesm eval benchmarks/fix-bug-with-tests.yaml \
+  --model openai/gpt-5-mini --variants single,specialists,adaptive \
+  --repeat 3 --pretty --output comparison.json
+```
+
+`single` uses the main agent without delegation or model-powered analysis tools;
+`specialists` permits explicit roles; `adaptive` additionally permits local routing.
+A mode permits delegation rather than forcing it. To compare orchestration on a
+common model, configure `pin_model: true`. For model-routing experiments, configure
+explicit role models and `routing_models`. Keep the config and model IDs alongside
+results, since the same mode can behave differently with different assignments.
+
+Every run gets a fresh temporary directory, optionally populated from the fixture
+`directory` or `--dir`. The original fixture is left unchanged. Relative `directory`
+paths resolve beside the YAML. Use relative paths in setup/assertion hooks; absolute
+paths escape this isolation. Hooks are trusted shell commands, not sandboxed code.
+The built-in corpus uses only workspace-relative paths.
+
+`debug: true` starts the reproduction/verification workflow. `protected_files`
+records hashes after setup and checks them independently after the agent finishes,
+so changing a test or its in-workspace checksum cannot make a protected test pass.
+An empty assertion list is invalid. A crash, timeout, exhausted loop, failed
+assertion, or unverified debug run cannot pass.
+
+JSON summaries include p50 and nearest-rank p95 latency, pass rate, model requests,
+and total cost divided by successful runs. Costs include failed runs and child
+requests. Unpriced totals and costs with zero successes are null. Dollar totals
+use configured rates and remain estimates even when token counts are exact.
+`human_corrections` is null; this runner does not manufacture a measure of human effort.
+
+The local regression suite covers provider truncation and interleaved tool calls,
+malformed arguments, writer serialization, cancellation of shell descendants,
+compaction with tool history, and interrupted-session recovery. Those deterministic
+checks live in `tests/test_execution.py`, `tests/test_providers.py`,
+`tests/test_runtime_flow.py`, and `tests/test_eval.py`; they do not need model APIs.

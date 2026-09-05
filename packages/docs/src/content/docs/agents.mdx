@@ -1,188 +1,115 @@
 ---
 title: Agents
-description: Configure agent personas and behaviors.
+description: Configure specialist roles and inspect their work.
 ---
 
-Agents are different personas with varying capabilities. Each agent has its own set of tools and permissions.
+Codesm delegates bounded tasks to specialist roles. Each role has a defined tool
+set, and role profiles can add instructions, select models, and restrict tools.
 
----
+## Built-in specialists
 
-## Built-in Agents
+| Role | Purpose | Capability |
+|------|---------|------------|
+| `coder` | Implement a focused change | Can edit, subject to parent permissions |
+| `planner` | Prepare implementation steps | Read-only |
+| `oracle` | Analyze difficult bugs and design decisions | Read-only |
+| `librarian` | Research code across repositories | Read-only |
+| `finder` | Locate relevant code | Read-only |
+| `researcher` | Investigate a codebase | Read-only |
+| `reviewer` | Review code and report issues | Read-only |
 
-| Agent | Description | Tools |
-|-------|-------------|-------|
-| `build` | Full access, default agent | All tools |
-| `plan` | Read-only exploration | Read, grep, glob |
-| `explore` | Fast codebase search | Finder, grep, glob |
+## Using specialists in the terminal
 
----
-
-## Switching Agents
-
-### In TUI
-
-Use **Tab** to switch between Build and Plan modes:
+Ask for a specialist as part of your task:
 
 ```txt frame="none"
-<TAB>
+Ask the planner to inspect this change and propose implementation steps.
 ```
 
-### Via Command
+The main agent can call `task`, `parallel_tasks`, or `pipeline` to delegate work.
+Specialist activity appears in the transcript with its role, model, status, and
+result. Press **Ctrl+T** to inspect the full details.
 
-```bash frame="none"
-/agent plan
-```
+The terminal's **Tab** key selects Smart/Rush model modes while idle and queues
+messages during active work. It does not switch between Build/Plan agents, and
+there is no `/agent plan` command. Use `read_only: true` in project configuration
+to restrict the whole task to read-only tools.
 
----
+## Role profiles
 
-## Custom Agents
-
-Define custom agents in `codesm.json`:
+Configure existing roles in `codesm.json`:
 
 ```json title="codesm.json"
 {
   "agents": {
     "reviewer": {
-      "description": "Code review specialist",
-      "tools": ["read", "grep", "code_review"],
-      "permissions": {
-        "edit": "deny",
-        "bash": "deny"
-      },
-      "model": "claude-sonnet-4-20250514",
-      "system_prompt": "You are a code reviewer. Focus on finding bugs, security issues, and suggesting improvements. Do not make changes."
+      "model": "openai/gpt-5.6-sol",
+      "prompt": "Focus on correctness and security. Cite files and lines.",
+      "tools": { "websearch": false },
+      "max_iterations": 20
     },
-    "docs": {
-      "description": "Documentation writer",
-      "tools": ["read", "write", "grep"],
-      "permissions": {
-        "edit": "allow",
-        "bash": "deny"
-      },
-      "rules": [
-        "Only modify .md and .mdx files",
-        "Follow the existing documentation style"
-      ]
+    "coder": {
+      "prompt": "Follow the existing documentation style when editing docs.",
+      "tools": { "bash": false },
+      "permissions": { "edit": "ask" }
     }
   }
 }
 ```
 
----
+Profiles tune built-in roles; adding an arbitrary profile name does not register
+a new specialist. Use `main` to configure the main agent.
 
-## Agent Properties
+| Property | Purpose |
+|----------|---------|
+| `model` | Exact `provider/model-id` for this role |
+| `prompt` | Additional instructions appended to the role prompt |
+| `tools` | Map of tool names to booleans; `false` removes a tool |
+| `permissions` | Additional permission restrictions |
+| `reasoning_effort` | Reasoning setting sent to the provider |
+| `max_iterations` | Maximum agent-loop iterations |
+| `max_output_tokens` | Maximum output tokens per request |
+| `context_tokens` | Context allowance for the role |
 
-### name
+Role profiles cannot restore tools denied by the parent or a role's read-only
+capability. See [Config](/config) for supported settings and precedence.
 
-Agent identifier (used in commands).
+## Agent selection
 
-### description
-
-Human-readable description shown in the TUI.
-
-### tools
-
-List of enabled tools:
-
-```json
-{
-  "tools": ["read", "edit", "grep", "bash"]
-}
-```
-
-### permissions
-
-Override default permissions:
-
-```json
-{
-  "permissions": {
-    "edit": "allow",
-    "bash": "ask"
-  }
-}
-```
-
-### model
-
-Use a specific model for this agent:
-
-```json
-{
-  "model": "gpt-4.1",
-  "provider": "openai"
-}
-```
-
-### system_prompt
-
-Custom system instructions:
-
-```json
-{
-  "system_prompt": "You are a Python expert. Always follow PEP 8."
-}
-```
-
-### rules
-
-Additional rules for the agent:
-
-```json
-{
-  "rules": [
-    "Focus on performance",
-    "Avoid breaking changes"
-  ]
-}
-```
-
-### max_steps
-
-Limit the number of tool calls:
-
-```json
-{
-  "max_steps": 50
-}
-```
-
----
-
-## Sub-agents
-
-The `task` tool spawns sub-agents for parallel work:
-
-```txt frame="none"
-Implement the API endpoint and write tests in parallel
-```
-
-Configure sub-agent behavior:
+The `delegation` setting controls how the main agent uses specialists:
 
 ```json title="codesm.json"
 {
-  "subagent": {
-    "model": "claude-3-5-haiku-20241022",
-    "max_steps": 20,
-    "tools": ["read", "edit", "grep"]
-  }
+  "delegation": "adaptive"
 }
 ```
 
----
+Use `single` for the main agent alone, `specialists` to require explicit role
+selection when delegating, or `adaptive` to allow automatic routing. Role profiles
+and `routing_models` control model selection. `pin_model: true` keeps specialists
+on the parent model.
 
-## Agent Selection
+## Shared execution and visible results
 
-codesm can automatically select agents based on the task:
+All specialist roles run through the same execution loop as the main agent.
+Planner, Oracle, librarian, finder, researcher, and reviewer are read-only; coder
+can edit. Workers inherit project rules, task constraints, the parent approval
+session, tool restrictions, and the shared usage allowance. These capability
+restrictions are enforced by the tool registry; project prose remains model
+instructions, not an operating-system sandbox.
 
-```json title="codesm.json"
-{
-  "agent_routing": {
-    "enabled": true,
-    "rules": [
-      { "pattern": "review", "agent": "reviewer" },
-      { "pattern": "document|docs", "agent": "docs" }
-    ]
-  }
-}
-```
+Independent reads may overlap. Mutations in one tool batch preserve their order,
+and coder workers share one writer lock per checkout. Concurrent writers would
+require isolated worktrees; the current runtime deliberately serializes them.
+Workers cannot recursively invoke the task/orchestration tools.
+
+The terminal shows a worker's role, selected model, waiting/running state, tool
+evidence, final result, and estimated cost when rates are known. Press **Ctrl+T** or expand a finished
+worker to inspect its evidence. Failed, stopped, cancelled, and interrupted runs
+remain labeled as such. Saved sessions retain worker results and usage.
+
+Escape cancels the active task and its workers. Shell timeouts and cancellation
+terminate the shell's process group, including descendants. On resume, completed
+tool exchanges remain in history. An interrupted call without a saved result is
+marked as having an unknown outcome, so the agent must inspect current state before
+retrying a possible mutation.

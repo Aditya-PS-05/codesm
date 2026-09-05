@@ -6,13 +6,13 @@
 
 <h1>Codesm</h1>
 
-**An AI coding agent for the terminal. Built to study how coding models fail.**
+**A terminal coding agent with model routing, specialist agents, and verified debugging.**
 
 </div>
 
 > [!TIP]
 >
-> Talks to Anthropic, OpenAI, OpenRouter, and local Ollama. Ships with 30 built in tools, speaks Model Context Protocol, runs parallel and pipelined subagents, integrates with Language Server Protocol for real code intelligence, compacts its own context, and logs every permission decision to an audit trail. <br />
+> Talks to Anthropic, OpenAI, Kimi, GLM, Gemini, DeepSeek, xAI, Mistral, OpenRouter, and local Ollama. Ships with 30 built in tools, speaks Model Context Protocol, runs parallel and pipelined subagents, integrates with Language Server Protocol for real code intelligence, compacts its own context, and logs every permission decision to an audit trail. <br />
 > Built to answer one question: *where exactly do coding models break down when you try to use them as real engineers?*
 >
 > | [<img alt="GitHub Follow" src="https://img.shields.io/github/followers/Aditya-PS-05?style=flat-square&logo=github&labelColor=black&color=24292f" width="156px" />](https://github.com/Aditya-PS-05) | Follow [@Aditya-PS-05](https://github.com/Aditya-PS-05) on GitHub for more projects. Hacking on AI coding agents, agent infrastructure, and model evaluation tooling. |
@@ -36,23 +36,37 @@
 
 <!-- </CENTERED SECTION FOR GITHUB DISPLAY> -->
 
-> **Run `uv pip install -e .` and launch `codesm`. You get a fully instrumented coding agent that logs every failure mode, not just the successes.**
+> **Run `uv pip install -e .` and launch `codesm run`. You get a fully instrumented coding agent that logs every failure mode, not just the successes.**
 
 ![Codesm TUI](assets/image.png)
 
-> Codesm is deliberately verbose about what it is doing. Every tool call, permission prompt, compaction event, and subagent spawn shows up in the TUI tree, because you cannot build an eval for a failure mode you cannot see.
+> Codesm uses a compact, full-width transcript with a fixed prompt at the bottom. Tool output stays collapsed by default; press **Ctrl+T** to inspect the full transcript, including reasoning summaries and specialist activity.
 
 ## Overview
 
-**Codesm** is a terminal first AI coding agent written in Python. It speaks to multiple providers (Anthropic Claude, OpenAI, OpenRouter routed models, and local Ollama), exposes a wide tool surface, and runs a ReAct loop that can fan out into parallel subagents or chain them into pipelines.
+**Codesm** is a terminal first AI coding agent written in Python. It supports native and OpenAI-compatible providers, exposes a wide tool surface, and runs a ReAct loop that can fan out into parallel subagents or chain them into pipelines.
 
-It is not trying to be the fastest or the most polished coding agent in the world. Tools like Claude Code, Cursor, Windsurf, Amp, and Aider already exist and are excellent. Codesm exists for a different reason.
+Codesm combines configurable model routing, specialist agents, and an explicit
+debugging workflow in one runtime. Use planner, Oracle, librarian, finder,
+researcher, reviewer, and coder roles with shared project rules and task budgets.
+The terminal shows which model ran, what it did, and whether the work completed,
+failed, was cancelled, or remains unverified.
 
-**Most coding agent failures happen in places you cannot see.** Context windows silently overflow. Tool calls arrive out of order. Permission systems get bypassed. Subagents hallucinate tool names that do not exist in the registry. Providers disagree about edge case tool schemas. When you only use a closed source agent, you learn what works. You do not learn what *does not.*
+```bash
+codesm debug "Fix the failing checkout tests" --dir ./project
+codesm eval benchmarks/fix-bug-with-tests.yaml \
+  --variants single,specialists,adaptive --repeat 3 --pretty
+```
 
-I built Codesm to make every one of those failure modes visible, loggable, and reproducible. Every tool call is auditable. Every compaction is logged with token counts. Every permission denial becomes a structured event. Every subagent spawn is tree rendered in the TUI. The goal is not to hide the complexity of agent execution. The goal is to surface it.
+OpenAI Responses, Anthropic, OpenRouter, and Ollama share usage accounting.
+Provider token counts and estimates are distinguished; unconfigured prices remain
+unknown. Configure role models, reasoning effort, context limits, and request or
+dollar budgets in `codesm.json` ([configuration](packages/docs/src/content/docs/config.mdx)).
 
-This makes Codesm useful in three ways: as a real coding agent for day to day work, as a testbed for trying new orchestration patterns, and as a rig for studying how different models fail at the same task.
+The evaluation and event logs make this a testbed as well as a coding tool.
+Use repeated runs to assess correctness, latency, and cost on your own tasks;
+more agents do not automatically mean better results. See the
+[benchmark guide](benchmarks/README.md) for fixture isolation and report semantics.
 
 ### Why "Codesm"?
 
@@ -95,7 +109,7 @@ The name is **code** plus the same "ism" suffix you see in *aphorism*, *mechanis
 
 ## Features
 
-- **Many providers.** Anthropic Claude, OpenAI, OpenRouter routed models, and local Ollama. Same ReAct loop, four backends. Route different subagents to different models based on task (Sonnet for coding, Flash for search, o1 for deep reasoning).
+- **Many providers.** Native OpenAI Responses and Anthropic Messages, compatible APIs for Kimi, GLM, Gemini, DeepSeek, xAI, and Mistral, plus OpenRouter and local Ollama. Discover current models with `codesm models --refresh`, use exact model IDs, and route specialists with per-role profiles.
 - **ReAct loop.** Canonical reason then act agent loop with streaming, automatic iteration limits, and per iteration context budget checks. Implemented in [`codesm/agent/loop.py`](./codesm/agent/loop.py).
 - **Thirty built in tools.** `bash`, `read`, `write`, `edit`, `multiedit`, `patch`, `grep`, `glob`, `ls`, `codesearch` (embedding based), `lsp` (symbols, diagnostics, references), `git`, `websearch`, `webfetch`, `oracle` (deep reasoning), `refactor`, `testgen`, `bug_localize`, `code_review`, `mermaid`, and more. All registered through a central [`tool/registry.py`](./codesm/tool/registry.py).
 - **MCP server integration.** Speaks Model Context Protocol natively. Load external tools from any MCP server (`mcp-servers.json`), or expose Codesm's own tools over MCP to other agents. Full client, codegen, and sandbox implementation in [`codesm/mcp/`](./codesm/mcp/).
@@ -108,7 +122,7 @@ The name is **code** plus the same "ism" suffix you see in *aphorism*, *mechanis
 - **Permission system.** Structured permission requests for file writes, edits, and shell commands via [`codesm/permission/`](./codesm/permission/). Every grant and deny goes to an append only audit log.
 - **Audit log.** [`codesm/audit/`](./codesm/audit/) records file operations, bash executions, permission decisions, and tool call traces. Designed so you can replay a session and reconstruct exactly what the agent did.
 - **Session management.** Each run is a session: title, topics, summary, message history, event stream. Sessions persist, so you can resume a conversation or inspect a past run.
-- **Textual TUI.** Collapsible tool call tree, streaming text, thinking display, oracle and subagent widgets, inline diffs for file edits, command palette, slash commands. Built on [Textual](https://textual.textualize.io/).
+- **Textual TUI.** Full-width streaming transcript, expandable tool output and diffs, specialist activity, a fixed prompt, command palette, and slash commands. Built on [Textual](https://textual.textualize.io/).
 - **Skills system.** Skill suggestions aware of file context. The agent gets different prompts depending on whether it is editing Python, Rust, TypeScript, or SQL. Implemented in [`codesm/skills/`](./codesm/skills/).
 - **Multiple memory layers.** Session memory, project memory (CLAUDE.md and AGENTS.md style files), and topic indexed rolling summaries.
 
@@ -141,10 +155,10 @@ cd codesm
 uv pip install -e .
 
 # Launch the TUI
-codesm
+codesm run
 
 # Or run directly with uv
-uv run codesm
+uv run codesm run
 ```
 
 That is it. Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`, or point at a local Ollama) and start typing.
@@ -176,7 +190,7 @@ uv pip install -e ".[dev]"
 pytest tests/ -v
 
 # Launch
-codesm
+codesm run
 ```
 
 ## Usage
@@ -184,71 +198,91 @@ codesm
 ### Basic Commands
 
 ```bash
-# Launch the interactive TUI (default)
-codesm
+# Launch the interactive TUI
+codesm run
 
 # Point at a specific provider and model
-codesm --provider anthropic --model claude-sonnet-4-5
-codesm --provider openai --model gpt-4o
-codesm --provider ollama --model llama3.1
+codesm run --model anthropic/claude-sonnet-5
+codesm run --model openai/gpt-5.6-luna
+codesm run --model ollama/llama3.1
 
 # Resume a previous session
-codesm --resume <SESSION_ID>
+codesm run --session <SESSION_ID>
 
 # Run a one shot task without the TUI (scriptable)
-codesm run "Add a docstring to the hello() function in /tmp/test.py"
+codesm chat "Add a docstring to the hello() function in /tmp/test.py"
 ```
 
 Inside the TUI, slash commands control the session:
 
 ```
 /help           Show all slash commands
-/provider       Switch LLM provider mid session
-/model          Switch model
-/compact        Manually trigger context compaction
-/tools          List available tools
-/sessions       Browse past sessions
-/clear          Clear the current conversation
-/quit           Exit
+/connect        Connect a provider
+/models         Switch model
+/mode           Choose Smart or Rush mode
+/theme          Choose a color palette
+/cost           Inspect session usage and cost
+/session        Browse past sessions
+/new            Start a new session
 ```
+
+The transcript fills the terminal without a sidebar. The prompt stays at the
+bottom, with the current model and estimated context remaining in the footer.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+T` | Expand or collapse tool output, reasoning summaries, and specialist details |
+| `Esc` | Interrupt active work |
+| `Enter` | Send a message, or queue it while work is running |
+| `Tab` | Queue a message during active work; switch Smart/Rush mode while idle |
+| `Ctrl+P` | Open the command palette |
+
+Use `/theme` to change colors; **Terminal** is the default palette. Use `/cost`
+for usage details, including costs that remain unknown until pricing is configured.
 
 ### Providers
 
-Codesm supports four provider backends, each routed through a common interface in [`codesm/provider/`](./codesm/provider/). Different subagents can use different providers. A search subagent might use fast and cheap Gemini Flash while a reasoning subagent uses o1.
+List built-in model examples with `codesm models`, or query current catalogs with
+`codesm models --refresh`. `/models` in the TUI uses the same catalog and accepts
+exact `provider/model-id` values, including newly released models. See the
+[provider guide](packages/docs/src/content/docs/providers.mdx) for verified model
+IDs, official sources, credentials, and custom endpoints.
 
 ```bash
 # Anthropic Claude (default)
 export ANTHROPIC_API_KEY="sk-ant-..."
-codesm --provider anthropic --model claude-sonnet-4-5
+codesm run --model anthropic/claude-sonnet-5
 
 # OpenAI
 export OPENAI_API_KEY="sk-..."
-codesm --provider openai --model gpt-4o
+codesm run --model openai/gpt-5.6-luna
+
+# Kimi / GLM
+export MOONSHOT_API_KEY="your-key"
+codesm run --model kimi/kimi-k3
+export ZAI_API_KEY="your-key"
+codesm run --model zai/glm-5.3
 
 # OpenRouter (routes to any model)
 export OPENROUTER_API_KEY="sk-or-..."
-codesm --provider openrouter --model anthropic/claude-3.5-sonnet
+codesm run --model openrouter/anthropic/claude-sonnet-5
 
 # Ollama (local, no API key needed)
 ollama serve
 ollama pull llama3.1
-codesm --provider ollama --model llama3.1
+codesm run --model ollama/llama3.1
 ```
 
-Per subagent provider routing is configured in `~/.config/codesm/config.toml`:
+Configure different models for specialists in `codesm.json`:
 
-```toml
-[providers.default]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
-
-[providers.finder]
-provider = "openrouter"
-model = "google/gemini-flash-1.5"
-
-[providers.oracle]
-provider = "openai"
-model = "o1"
+```json
+{
+  "model": "anthropic/claude-sonnet-5",
+  "agents": {
+    "finder": {"model": "google/gemini-3.8-flash"},
+    "oracle": {"model": "openai/gpt-5.6-sol"}
+  }
+}
 ```
 
 ### Tool System
@@ -413,7 +447,7 @@ Every Codesm run is a session. Sessions have:
 ```bash
 codesm sessions list              # List recent sessions
 codesm sessions show <ID>         # Print session details
-codesm --resume <ID>              # Resume a session in the TUI
+codesm run --session <ID>              # Resume a session in the TUI
 ```
 
 ## Configuration
@@ -460,6 +494,12 @@ model = "o1"
 |----------|---------|
 | `ANTHROPIC_API_KEY` | Required for the Anthropic provider |
 | `OPENAI_API_KEY` | Required for the OpenAI provider |
+| `MOONSHOT_API_KEY` | Kimi credentials (`KIMI_API_KEY` also accepted) |
+| `ZAI_API_KEY` | GLM credentials (`GLM_API_KEY` also accepted) |
+| `GEMINI_API_KEY` | Google Gemini credentials (`GOOGLE_API_KEY` also accepted) |
+| `DEEPSEEK_API_KEY` | DeepSeek credentials |
+| `XAI_API_KEY` | xAI Grok credentials |
+| `MISTRAL_API_KEY` | Mistral credentials |
 | `OPENROUTER_API_KEY` | Required for OpenRouter routed models |
 | `OLLAMA_HOST` | Ollama server URL (default `http://localhost:11434`) |
 | `CODESM_CONFIG_DIR` | Override config directory (default `~/.config/codesm/`) |
@@ -624,7 +664,7 @@ flowchart TD
 **Package layout:**
 
 - **`codesm/agent/`**: ReAct loop, agent, subagent, router, orchestrator
-- **`codesm/provider/`**: Anthropic, OpenAI, OpenRouter, and Ollama clients
+- **`codesm/provider/`**: Native/compatible clients, provider routing, and model discovery
 - **`codesm/tool/`**: all built in tools, registry, descriptions
 - **`codesm/mcp/`**: MCP client, manager, sandbox, codegen, server
 - **`codesm/session/`**: session state, context manager, summarizer, topics
@@ -663,10 +703,10 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 
 # Run the TUI
-codesm
+codesm run
 
 # Run a one shot task
-codesm run "Summarize the README"
+codesm chat "Summarize the README"
 
 # Run the test suite
 pytest tests/ -v
@@ -686,7 +726,7 @@ ruff check codesm/
 | `pytest tests/ -v` | Run the test suite |
 | `pytest tests/test_mcp.py` | Run just the MCP integration tests |
 | `python -m codesm.tui.app` | Launch the TUI directly (skip the CLI entry point) |
-| `codesm run <prompt>` | Run a one shot task without entering the TUI |
+| `codesm chat <prompt>` | Run a one shot task without entering the TUI |
 
 ### Repository Layout
 
@@ -735,7 +775,7 @@ codesm [OPTIONS]
   --config <PATH>           Override config file path
   --log-level <LEVEL>       DEBUG, INFO, WARNING, ERROR
 
-codesm run <PROMPT>         Run a one shot task without the TUI
+codesm chat <PROMPT>        Run a one shot task without the TUI
 codesm sessions list        List recent sessions
 codesm sessions show <ID>   Print session details
 codesm audit show <ID>      Print audit log for a session

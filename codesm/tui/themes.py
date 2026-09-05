@@ -1,9 +1,12 @@
-"""Theme system for codesm TUI - 30+ themes inspired by OpenCode"""
+"""Native terminal colors and optional custom palettes for codesm."""
 
-from textual.theme import Theme
+from textual.theme import BUILTIN_THEMES, Theme
 
 # Theme definitions organized by category
 THEME_DEFINITIONS = {
+    "Terminal": [
+        {"name": "terminal", "display": "Terminal (use your terminal colors)"},
+    ],
     "Dark": [
         {
             "name": "dark",
@@ -452,7 +455,8 @@ THEME_LIST = []  # Ordered list for cycling
 for category, definitions in THEME_DEFINITIONS.items():
     is_dark = category != "Light"
     for definition in definitions:
-        theme = _create_theme(definition, dark=is_dark)
+        theme = (BUILTIN_THEMES["textual-ansi"] if definition["name"] == "terminal"
+                 else _create_theme(definition, dark=is_dark))
         THEMES[definition["name"]] = theme
         THEME_LIST.append({
             "name": definition["name"],

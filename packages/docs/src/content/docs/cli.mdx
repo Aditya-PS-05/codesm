@@ -1,217 +1,114 @@
 ---
 title: CLI
-description: Using codesm from the command line.
+description: Use codesm from the command line and discover current models.
 ---
 
-codesm can be used directly from the command line for quick tasks.
-
----
-
-## Basic Usage
-
-### Start the TUI
+## Start a session
 
 ```bash
-codesm
+codesm run
+codesm run /path/to/project --model openai/gpt-5.6-luna
+codesm run --session SESSION_ID
 ```
 
-### One-shot Prompt
+Bare `codesm` displays help. The `run` command starts the interactive TUI.
+Use `/connect` to save provider credentials and `/models` to choose a model.
 
-Run a single prompt and exit:
+## Work in the terminal
+
+The UI uses one compact, full-width transcript without a sidebar. The prompt stays
+at the bottom, with the current model and estimated context remaining in the footer.
+Tool output is collapsed by default; commands, file paths, and completion or failure
+status remain visible.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+T` | Expand or collapse full tool output, reasoning summaries, and specialist details |
+| `Esc` | Interrupt active work |
+| `Enter` | Send a message, or queue it while work is running |
+| `Tab` | Queue a message during active work; switch Smart/Rush mode while idle |
+| `Ctrl+P` | Open the command palette |
+
+Use `/mode` to choose Smart or Rush mode, `/theme` to select a color palette, and
+`/cost` to inspect usage and cost. **Terminal** is the default palette. Model and
+theme selection remain available through their slash commands; `Ctrl+T` controls
+transcript details.
+
+## Send one prompt
 
 ```bash
-codesm -p "Explain the main function in src/main.py"
+codesm chat "Explain src/main.py" --dir ./project
+codesm chat "Find the failing test" --model kimi/kimi-k3
 ```
 
-### Pipe Input
+`chat` streams plain text and task status to the terminal. It accepts the same
+`provider/model-id` format as `run` and `debug`.
 
-Pipe content to codesm:
+## Discover models
 
 ```bash
-cat error.log | codesm -p "What's causing this error?"
+codesm models
+codesm models --provider zai
+codesm models --refresh --provider openai
+codesm models --refresh --provider openrouter --json
 ```
 
----
+Use `--dir ./project` to load that project's configuration. Built-in and configured
+models work offline; `--refresh` queries provider catalogs and reports per-provider
+failures. See [Models](/models) and [Providers](/providers) for model IDs,
+credentials, custom endpoints, and exact-ID selection.
 
-## Options
+## Command help
 
 ```bash
-codesm [OPTIONS] [DIRECTORY]
+codesm --help
+codesm --version
+codesm run --help
+codesm debug --help
+codesm eval --help
+codesm memory --help
+codesm index --help
+codesm mcp --help
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-p, --prompt TEXT` | Run a single prompt |
-| `-m, --model TEXT` | Override model |
-| `--provider TEXT` | Override provider |
-| `-c, --continue` | Continue last session |
-| `--session ID` | Resume specific session |
-| `--no-tui` | Run without TUI |
-| `-v, --verbose` | Enable verbose logging |
-| `--version` | Show version |
-| `--help` | Show help |
+Model preferences and execution limits are configured in `codesm.json`, or in the
+file named by `CODESM_CONFIG`. [Config](/config) describes configuration precedence.
 
----
-
-## Examples
-
-### Quick Question
+## Debug a failure
 
 ```bash
-codesm -p "What does the User class do?" --no-tui
+codesm debug "Fix the failing checkout tests" --dir ./project
 ```
 
-### Use Different Model
+In the terminal UI, use `/debug <problem>`. Codesm records a failing reproduction
+command and its working directory, hypotheses, command output, and verification.
+`debug(action="verify")` reruns the original command; a different passing command
+cannot verify the recorded failure. There are at most three verification attempts
+and one consultation through `debug(action="consult", reason="...")`.
+
+The run finishes as `verified` only after a passing rerun. Missing reproduction,
+unavailable checks, or exhausted attempts leave it `unverified`. A later mutation
+invalidates a prior verification. `/debug off` ends this workflow. Evidence is
+saved with the session. Ordinary tool approval rules still apply; an operation
+requiring interactive approval is denied in headless use rather than hanging.
+
+## Compare execution modes
 
 ```bash
-codesm --model gpt-4.1 --provider openai
+codesm eval benchmarks/fix-bug-with-tests.yaml \
+  --model openai/gpt-5-mini \
+  --variants single,specialists,adaptive --repeat 3 \
+  --pretty --output comparison.json
 ```
 
-### Continue Session
+Each run uses a fresh temporary workspace. An optional `directory` in the YAML or
+`--dir` supplies a fixture to copy; relative fixture paths resolve against the YAML
+file. Setup and assertion hooks must use workspace-relative paths. Hooks are
+trusted shell code, so a fresh copy is not an OS sandbox. Existing checkout Git
+metadata, dependency directories, and caches are excluded from copies. MCP is only
+loaded from the fixture's `mcp-servers.json`, not the caller's global configuration.
 
-```bash
-codesm --continue
-```
-
-### Work on Specific Project
-
-```bash
-codesm /path/to/project
-```
-
----
-
-## Output Formats
-
-### Plain Text (Default)
-
-```bash
-codesm -p "List all TODO comments" --no-tui
-```
-
-### JSON Output
-
-```bash
-codesm -p "List all functions" --output json
-```
-
-### Markdown Output
-
-```bash
-codesm -p "Document this code" --output markdown > docs.md
-```
-
----
-
-## Scripting
-
-Use codesm in scripts:
-
-```bash
-#!/bin/bash
-
-# Generate documentation for all Python files
-for file in src/*.py; do
-  codesm -p "Generate docstrings for $file" --no-tui
-done
-```
-
-### Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| `0` | Success |
-| `1` | General error |
-| `2` | Invalid arguments |
-| `3` | API error |
-| `4` | Permission denied |
-
----
-
-## Environment Variables
-
-Override settings via environment:
-
-```bash
-# Provider configuration
-export CODESM_PROVIDER="anthropic"
-export CODESM_MODEL="claude-sonnet-4-20250514"
-
-# Behavior
-export CODESM_AUTO_APPROVE="true"
-export CODESM_LOG_LEVEL="DEBUG"
-```
-
----
-
-## Completions
-
-### Bash
-
-```bash
-eval "$(codesm --completion bash)"
-```
-
-### Zsh
-
-```bash
-eval "$(codesm --completion zsh)"
-```
-
-### Fish
-
-```bash
-codesm --completion fish | source
-```
-
-Add to your shell config file to persist.
-
----
-
-## Memory Commands
-
-Manage cross-session memory:
-
-```bash
-# List all memories
-codesm memory list
-
-# List project memories only
-codesm memory list --project
-
-# Add a memory
-codesm memory add "Use pytest for testing" --type preference
-
-# Delete a memory
-codesm memory forget <memory-id>
-
-# Clear all memories
-codesm memory clear --all
-```
-
-See [Memory](/memory) for details.
-
----
-
-## Index Commands
-
-Manage codebase indexing:
-
-```bash
-# Build index for current directory
-codesm index build
-
-# Force rebuild
-codesm index build --force
-
-# Check index status
-codesm index status
-
-# Search the index
-codesm index search "authentication handler"
-
-# Clear the index
-codesm index clear
-```
-
-See [Indexing](/indexing) for details.
+Reports include pass rate, completion state, child usage, tool failures, estimated
+and unpriced requests, p50/p95 latency, and all-run cost per successful result.
+Percentiles from small samples are descriptive, not performance claims. Manual
+corrections are reported as unknown because the runner does not measure them.

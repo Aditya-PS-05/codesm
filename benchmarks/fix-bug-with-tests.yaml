@@ -1,10 +1,8 @@
 name: "fix-bug-with-tests"
 description: "A failing test points at a real bug. Agent must fix production code, not the test."
 
-directory: /tmp/codesm-eval-bug
 
 setup:
-  - find . -mindepth 1 -delete || true
   - |
     cat > slicer.py <<'EOF'
     def last_n(items, n):
@@ -47,3 +45,6 @@ assertion:
 
 max_iterations: 20
 timeout: 300
+
+debug: true
+protected_files: [test_slicer.py]

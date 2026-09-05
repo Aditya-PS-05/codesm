@@ -1,162 +1,17 @@
 """Modal dialogs for codesm TUI"""
 
+from rich.markup import escape
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
 from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Input, Label, Button
 from textual.binding import Binding
-from textual import events
 
 from codesm.permission import PermissionRequest, PermissionResponse
-
-
-MODELS_BY_PROVIDER = {
-    "Recent": [
-        {"id": "anthropic/claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "Anthropic"},
-    ],
-    "Anthropic": [
-        {"id": "anthropic/claude-haiku-3", "name": "Claude Haiku 3", "provider": "Anthropic"},
-        {"id": "anthropic/claude-haiku-3.5", "name": "Claude Haiku 3.5", "provider": "Anthropic"},
-        {"id": "anthropic/claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "Anthropic"},
-        {"id": "anthropic/claude-opus-4", "name": "Claude Opus 4", "provider": "Anthropic"},
-    ],
-    "OpenAI": [
-        {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
-        {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "provider": "OpenAI"},
-        {"id": "openai/gpt-4-turbo", "name": "GPT-4 Turbo", "provider": "OpenAI"},
-        {"id": "openai/o1", "name": "O1", "provider": "OpenAI"},
-        {"id": "openai/o1-mini", "name": "O1 Mini", "provider": "OpenAI"},
-    ],
-    "Google": [
-        {"id": "google/gemini-2.0-flash", "name": "Gemini 2.0 Flash", "provider": "Google"},
-        {"id": "google/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "provider": "Google"},
-    ],
-    "OpenRouter": [
-        {"id": "openrouter/anthropic/claude-sonnet-4", "name": "Claude Sonnet 4", "provider": "OpenRouter"},
-        {"id": "openrouter/anthropic/claude-3.5-haiku", "name": "Claude 3.5 Haiku", "provider": "OpenRouter"},
-        {"id": "openrouter/anthropic/claude-opus-4", "name": "Claude Opus 4", "provider": "OpenRouter"},
-        {"id": "openrouter/openai/gpt-4o", "name": "GPT-4o", "provider": "OpenRouter"},
-        {"id": "openrouter/openai/gpt-4o-mini", "name": "GPT-4o Mini", "provider": "OpenRouter"},
-        {"id": "openrouter/openai/o1", "name": "O1", "provider": "OpenRouter"},
-        {"id": "openrouter/openai/o1-mini", "name": "O1 Mini", "provider": "OpenRouter"},
-        {"id": "openrouter/google/gemini-flash-1.5", "name": "Gemini 1.5 Flash", "provider": "OpenRouter"},
-        {"id": "openrouter/google/gemini-pro-1.5", "name": "Gemini 1.5 Pro", "provider": "OpenRouter"},
-        {"id": "openrouter/deepseek/deepseek-chat", "name": "DeepSeek Chat", "provider": "OpenRouter"},
-        {"id": "openrouter/meta-llama/llama-3.1-70b-instruct", "name": "Llama 3.1 70B", "provider": "OpenRouter"},
-    ],
-    "Ollama (Local)": [
-        # Qwen 3 - excellent for coding and reasoning
-        {"id": "ollama/qwen3:0.6b", "name": "Qwen 3 0.6B (Tiny)", "provider": "Local"},
-        {"id": "ollama/qwen3:1.7b", "name": "Qwen 3 1.7B", "provider": "Local"},
-        {"id": "ollama/qwen3:4b", "name": "Qwen 3 4B", "provider": "Local"},
-        {"id": "ollama/qwen3:8b", "name": "Qwen 3 8B", "provider": "Local"},
-        {"id": "ollama/qwen3:14b", "name": "Qwen 3 14B", "provider": "Local"},
-        {"id": "ollama/qwen3:32b", "name": "Qwen 3 32B", "provider": "Local"},
-        {"id": "ollama/qwen3:235b", "name": "Qwen 3 235B (MoE)", "provider": "Local"},
-        # Qwen 2.5 Coder - specialized for code
-        {"id": "ollama/qwen2.5-coder:1.5b", "name": "Qwen 2.5 Coder 1.5B", "provider": "Local"},
-        {"id": "ollama/qwen2.5-coder:7b", "name": "Qwen 2.5 Coder 7B", "provider": "Local"},
-        {"id": "ollama/qwen2.5-coder:14b", "name": "Qwen 2.5 Coder 14B", "provider": "Local"},
-        {"id": "ollama/qwen2.5-coder:32b", "name": "Qwen 2.5 Coder 32B", "provider": "Local"},
-        # Llama 3.3 / 3.2 / 3.1
-        {"id": "ollama/llama3.3:70b", "name": "Llama 3.3 70B", "provider": "Local"},
-        {"id": "ollama/llama3.2:1b", "name": "Llama 3.2 1B (Fast)", "provider": "Local"},
-        {"id": "ollama/llama3.2:3b", "name": "Llama 3.2 3B", "provider": "Local"},
-        {"id": "ollama/llama3.1:8b", "name": "Llama 3.1 8B", "provider": "Local"},
-        {"id": "ollama/llama3.1:70b", "name": "Llama 3.1 70B", "provider": "Local"},
-        {"id": "ollama/llama3.1:405b", "name": "Llama 3.1 405B", "provider": "Local"},
-        # DeepSeek - strong reasoning and coding
-        {"id": "ollama/deepseek-r1:1.5b", "name": "DeepSeek R1 1.5B", "provider": "Local"},
-        {"id": "ollama/deepseek-r1:7b", "name": "DeepSeek R1 7B", "provider": "Local"},
-        {"id": "ollama/deepseek-r1:8b", "name": "DeepSeek R1 8B", "provider": "Local"},
-        {"id": "ollama/deepseek-r1:14b", "name": "DeepSeek R1 14B", "provider": "Local"},
-        {"id": "ollama/deepseek-r1:32b", "name": "DeepSeek R1 32B", "provider": "Local"},
-        {"id": "ollama/deepseek-r1:70b", "name": "DeepSeek R1 70B", "provider": "Local"},
-        {"id": "ollama/deepseek-r1:671b", "name": "DeepSeek R1 671B", "provider": "Local"},
-        {"id": "ollama/deepseek-coder-v2:16b", "name": "DeepSeek Coder V2 16B", "provider": "Local"},
-        {"id": "ollama/deepseek-coder-v2:236b", "name": "DeepSeek Coder V2 236B", "provider": "Local"},
-        # Code Llama
-        {"id": "ollama/codellama:7b", "name": "Code Llama 7B", "provider": "Local"},
-        {"id": "ollama/codellama:13b", "name": "Code Llama 13B", "provider": "Local"},
-        {"id": "ollama/codellama:34b", "name": "Code Llama 34B", "provider": "Local"},
-        {"id": "ollama/codellama:70b", "name": "Code Llama 70B", "provider": "Local"},
-        # Mistral / Mixtral
-        {"id": "ollama/mistral:7b", "name": "Mistral 7B", "provider": "Local"},
-        {"id": "ollama/mistral-small:24b", "name": "Mistral Small 24B", "provider": "Local"},
-        {"id": "ollama/mistral-large:123b", "name": "Mistral Large 123B", "provider": "Local"},
-        {"id": "ollama/mixtral:8x7b", "name": "Mixtral 8x7B (MoE)", "provider": "Local"},
-        {"id": "ollama/mixtral:8x22b", "name": "Mixtral 8x22B (MoE)", "provider": "Local"},
-        {"id": "ollama/codestral:22b", "name": "Codestral 22B", "provider": "Local"},
-        # Gemma (Google)
-        {"id": "ollama/gemma:2b", "name": "Gemma 2B", "provider": "Local"},
-        {"id": "ollama/gemma:7b", "name": "Gemma 7B", "provider": "Local"},
-        {"id": "ollama/gemma2:2b", "name": "Gemma 2 2B", "provider": "Local"},
-        {"id": "ollama/gemma2:9b", "name": "Gemma 2 9B", "provider": "Local"},
-        {"id": "ollama/gemma2:27b", "name": "Gemma 2 27B", "provider": "Local"},
-        {"id": "ollama/gemma3:1b", "name": "Gemma 3 1B", "provider": "Local"},
-        {"id": "ollama/gemma3:4b", "name": "Gemma 3 4B", "provider": "Local"},
-        {"id": "ollama/gemma3:12b", "name": "Gemma 3 12B", "provider": "Local"},
-        {"id": "ollama/gemma3:27b", "name": "Gemma 3 27B", "provider": "Local"},
-        # Phi (Microsoft)
-        {"id": "ollama/phi3:mini", "name": "Phi 3 Mini (3.8B)", "provider": "Local"},
-        {"id": "ollama/phi3:medium", "name": "Phi 3 Medium (14B)", "provider": "Local"},
-        {"id": "ollama/phi4:14b", "name": "Phi 4 14B", "provider": "Local"},
-        # StarCoder
-        {"id": "ollama/starcoder2:3b", "name": "StarCoder 2 3B", "provider": "Local"},
-        {"id": "ollama/starcoder2:7b", "name": "StarCoder 2 7B", "provider": "Local"},
-        {"id": "ollama/starcoder2:15b", "name": "StarCoder 2 15B", "provider": "Local"},
-        # Command R (Cohere)
-        {"id": "ollama/command-r:35b", "name": "Command R 35B", "provider": "Local"},
-        {"id": "ollama/command-r-plus:104b", "name": "Command R+ 104B", "provider": "Local"},
-        # Other popular models
-        {"id": "ollama/wizard-vicuna-uncensored:13b", "name": "Wizard Vicuna 13B", "provider": "Local"},
-        {"id": "ollama/neural-chat:7b", "name": "Neural Chat 7B", "provider": "Local"},
-        {"id": "ollama/openchat:7b", "name": "OpenChat 7B", "provider": "Local"},
-        {"id": "ollama/dolphin-mixtral:8x7b", "name": "Dolphin Mixtral 8x7B", "provider": "Local"},
-        {"id": "ollama/yi:34b", "name": "Yi 34B", "provider": "Local"},
-        {"id": "ollama/solar:10.7b", "name": "Solar 10.7B", "provider": "Local"},
-    ],
-}
-
-# Agent modes - smart vs rush
-AGENT_MODES = {
-    "smart": {
-        "name": "Smart",
-        "description": "Full capability, best for complex tasks",
-        "model_suffix": "",  # Uses current model
-    },
-    "rush": {
-        "name": "Rush",
-        "description": "67% cheaper, 50% faster - for simple tasks",
-        "model_suffix": "haiku",  # Prefers haiku models
-    },
-}
-
-# Rush mode model mappings - maps provider to rush model
-RUSH_MODE_MODELS = {
-    "anthropic": "anthropic/claude-haiku-3.5",
-    "openai": "openai/gpt-4o-mini",
-    "openrouter": "openrouter/anthropic/claude-3.5-haiku",
-    "google": "google/gemini-2.0-flash",
-    "ollama": "ollama/qwen3:4b",
-}
-
-PROVIDERS = {
-    "Popular": [
-        {"id": "anthropic", "name": "Anthropic", "hint": "Claude Max or API key"},
-        {"id": "github-copilot", "name": "GitHub Copilot", "hint": ""},
-        {"id": "openai", "name": "OpenAI", "hint": ""},
-        {"id": "google", "name": "Google", "hint": ""},
-        {"id": "openrouter", "name": "OpenRouter", "hint": "Multi-model access"},
-    ],
-    "Other": [
-        {"id": "ollama", "name": "Ollama", "hint": "Local models"},
-        {"id": "groq", "name": "Groq", "hint": "Fast inference"},
-        {"id": "together", "name": "Together AI", "hint": ""},
-        {"id": "fireworks", "name": "Fireworks AI", "hint": ""},
-        {"id": "deepseek", "name": "DeepSeek", "hint": ""},
-    ],
-}
+from codesm.config.config import Config
+from codesm.provider.catalog import canonical_provider, discover_models, model_catalog, provider_specs
+from codesm.provider.router import ModelRouter
 
 
 class ModalListItem(Static):
@@ -169,15 +24,19 @@ class ModalListItem(Static):
         self.hint = hint
         self._selected = False
 
-    def compose(self) -> ComposeResult:
+    def render(self) -> Text:
+        text = Text("› " if self._selected else "  ", no_wrap=True, overflow="ellipsis")
+        text.append(self.label, style="bold" if self._selected else "")
         if self.hint:
-            yield Static(f"  {self.label} [dim]{self.hint}[/]", classes="item-content")
-        else:
-            yield Static(f"  {self.label}", classes="item-content")
+            text.append(f"  {self.hint}", style="dim")
+        return text
 
     def set_selected(self, selected: bool):
+        if selected == self._selected:
+            return
         self._selected = selected
         self.set_class(selected, "-selected")
+        self.refresh()
 
     def on_click(self):
         self.screen.dismiss(self.item_id)
@@ -188,17 +47,21 @@ class ModelSelectModal(ModalScreen):
 
     CSS = """
     ModelSelectModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 70;
-        height: auto;
-        max-height: 80%;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
+        height: 24;
+        max-height: 100%;
+        overflow: hidden;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -219,22 +82,33 @@ class ModelSelectModal(ModalScreen):
 
     #search-input {
         margin-bottom: 1;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #model-list {
-        height: auto;
-        max-height: 20;
+        height: 1fr;
+        min-height: 1;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
         padding: 0;
     }
 
+    #model-status {
+        height: 3;
+        overflow-y: auto;
+        margin-top: 1;
+        color: $text-muted;
+    }
+
     .group-header {
-        color: $secondary;
+        color: $text-muted;
         text-style: bold;
         padding: 1 0 0 0;
     }
@@ -245,108 +119,227 @@ class ModelSelectModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
     }
 
-    ModalListItem.-selected .item-content {
-        color: $background;
-        text-style: bold;
+    ModalListItem.-selected:ansi {
+        text-style: reverse;
     }
 
     #modal-footer {
-        height: 1;
+        height: auto;
         margin-top: 1;
         color: $text-muted;
     }
 
-    #modal-footer Static {
-        margin-right: 2;
-    }
     """
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
         Binding("enter", "select", "Select", show=False),
-        Binding("ctrl+a", "connect_provider", "Connect Provider", show=False),
+        Binding("ctrl+a", "connect_provider", "Connect Provider", show=False, priority=True),
+        Binding("ctrl+r", "refresh_models", "Refresh models", show=False, priority=True),
     ]
 
-    def __init__(self, current_model: str = ""):
+    def __init__(self, current_model: str = "", config: Config | None = None, provider: str | None = None):
         super().__init__()
         self.current_model = current_model
+        self.config = config
+        self.provider = canonical_provider(provider) if provider else None
         self.selected_index = 0
         self.visible_items: list[ModalListItem] = []
         self.search_query = ""
+        self.models: list[dict] = []
+        self._items: list[tuple[dict, ModalListItem]] = []
+        self._headers: list[tuple[Static, list[ModalListItem]]] = []
+        self._exact_item: ModalListItem | None = None
+        self._empty_message: Static | None = None
+        self._refresh_worker = None
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-container"):
             with Horizontal(id="modal-header"):
                 yield Static("Select model", id="modal-title")
                 yield Static("esc", id="esc-hint")
-            yield Input(placeholder="Search", id="search-input")
+            yield Input(placeholder="Search or enter provider/model", id="search-input")
             yield VerticalScroll(id="model-list")
-            with Horizontal(id="modal-footer"):
-                yield Static("[bold]Connect provider[/] ctrl+a")
-                yield Static("[bold]Favorite[/] ctrl+f")
+            yield Static("", id="model-status", markup=False)
+            yield Static("ctrl+a connect · ctrl+r refresh · enter select", id="modal-footer")
 
-    def on_mount(self):
-        self._build_list()
+    async def on_mount(self):
+        if self.config is None:
+            agent = getattr(self.app, "agent", None)
+            self.config = agent.config if agent else Config.load(directory=getattr(self.app, "directory", None))
+        self.models = model_catalog(self.config)
+        self._include_current_model()
+        await self._build_list()
         self.query_one("#search-input", Input).focus()
+        self.action_refresh_models()
 
-    def _build_list(self, filter_text: str = ""):
+    def _include_current_model(self):
+        if not self.current_model:
+            return
+        provider, model = ModelRouter.resolve_model(self.current_model)
+        model_id = f"{provider}/{model}"
+        self.current_model = model_id
+        if not any(entry["id"] == model_id for entry in self.models):
+            spec = provider_specs(self.config).get(provider)
+            self.models.insert(0, {"id": model_id, "name": model,
+                                   "provider": spec.name if spec else provider, "source": "current"})
+
+    def _exact_model_entry(self) -> dict | None:
+        query = self.search_query.strip()
+        if "/" not in query:
+            return None
+        try:
+            provider, model = ModelRouter.resolve_model(query)
+        except ValueError:
+            return None
+        spec = provider_specs(self.config).get(provider)
+        if spec and (not self.provider or provider == self.provider):
+            return {"id": f"{provider}/{model}", "name": f"Use {provider}/{model}", "provider": "Exact model ID"}
+        return None
+
+    def _selected_model_id(self) -> str:
+        return self.visible_items[self.selected_index].item_id if self.visible_items else self.current_model
+
+    async def _build_list(self):
+        """Replace a refreshed catalog atomically; filtering reuses these rows."""
         container = self.query_one("#model-list", VerticalScroll)
-        container.remove_children()
-        self.visible_items = []
+        async with container.batch():
+            previous_id = self._selected_model_id()
+            offset = (self.visible_items[self.selected_index].virtual_region.y - container.scroll_y
+                      if self.visible_items else None)
+            exact_item = ModalListItem("", "", "Exact model ID")
+            exact_item.display = False
+            empty_message = Static("No matches. Enter provider/model to use an exact ID.", markup=False)
+            empty_message.display = False
+            widgets = [exact_item]
+            items = []
+            headers = []
+            group = None
+            for entry in self.models:
+                if self.provider and not entry["id"].startswith(self.provider + "/"):
+                    continue
+                if entry["provider"] != group:
+                    group = entry["provider"]
+                    header = Static(group, classes="group-header", markup=False)
+                    headers.append((header, []))
+                    widgets.append(header)
+                item = ModalListItem(entry["id"], entry["name"], entry["id"])
+                items.append((entry, item))
+                headers[-1][1].append(item)
+                widgets.append(item)
+            widgets.append(empty_message)
+            await container.remove_children()
+            await container.mount(*widgets)
+            # Navigation/search may have continued while the widgets mounted.
+            selected = self._selected_model_id()
+            self._items, self._headers = items, headers
+            self._exact_item, self._empty_message = exact_item, empty_message
+            self._filter_list(selected, offset if selected == previous_id else None)
 
-        filter_lower = filter_text.lower()
+    def _filter_list(self, selected: str | None = None, offset: float | None = None):
+        if self._exact_item is None:
+            return
+        query = self.search_query.strip().lower()
+        exact = self._exact_model_entry()
+        selected = selected or (exact["id"] if exact else self._selected_model_id())
+        with self.app.batch_update():
+            visible = []
+            self._exact_item.display = exact is not None
+            self._exact_item.set_selected(False)
+            if exact:
+                self._exact_item.item_id = exact["id"]
+                self._exact_item.label = exact["name"]
+                self._exact_item.refresh()
+                visible.append(self._exact_item)
+            for entry, item in self._items:
+                item.set_selected(False)
+                matches = (not exact or entry["id"] != exact["id"]) and any(
+                    query in entry.get(key, "").lower() for key in ("id", "name", "provider"))
+                item.display = matches
+                if matches:
+                    visible.append(item)
+            for header, group_items in self._headers:
+                header.display = any(item.display for item in group_items)
+            self.visible_items = visible
+            self.selected_index = next((i for i, item in enumerate(visible) if item.item_id == selected), 0)
+            self._empty_message.display = not visible
+            if visible:
+                item = visible[self.selected_index]
+                item.set_selected(True)
+                self.call_after_refresh(self._scroll_selection, item.item_id,
+                                        offset if item.item_id == selected else None)
 
-        for group_name, models in MODELS_BY_PROVIDER.items():
-            filtered_models = [
-                m for m in models
-                if filter_lower in m["name"].lower() or filter_lower in m.get("provider", "").lower()
-            ] if filter_text else models
+    def _scroll_selection(self, selected_id: str | None = None, offset: float | None = None):
+        if not self.is_mounted or not self.visible_items:
+            return
+        item = self.visible_items[self.selected_index]
+        if selected_id is not None and item.item_id != selected_id:
+            return
+        container = self.query_one("#model-list", VerticalScroll)
+        if offset is not None:
+            container.scroll_to(y=item.virtual_region.y - offset, animate=False, immediate=True)
+        container.scroll_to_widget(item, animate=False, immediate=True)
 
-            if not filtered_models:
-                continue
+    def action_refresh_models(self):
+        if self._refresh_worker and not self._refresh_worker.is_finished:
+            return
+        self._refresh_worker = self.run_worker(self._refresh_models(), group="model-discovery", exclusive=True)
 
-            container.mount(Static(group_name, classes="group-header"))
-
-            for model in filtered_models:
-                hint = model.get("provider", "")
-                item = ModalListItem(model["id"], model["name"], hint)
-                container.mount(item)
-                self.visible_items.append(item)
-
-        if self.visible_items:
-            self.selected_index = 0
-            self.visible_items[0].set_selected(True)
+    async def _refresh_models(self):
+        status = self.query_one("#model-status", Static)
+        status.update("Refreshing available models…")
+        try:
+            config = self.config.model_copy(update={"model": self.current_model}) if self.current_model else self.config
+            entries, errors = await discover_models(config, self.provider)
+        except Exception as exc:
+            status.update(f"Refresh failed ({type(exc).__name__}); showing cached models.")
+            return
+        ids = {entry["id"] for entry in entries}
+        entries.extend(entry for entry in self.models
+                       if entry["id"].split("/", 1)[0] in errors and entry["id"] not in ids)
+        previous = self.models
+        self.models = entries
+        self._include_current_model()
+        if self.models != previous:
+            await self._build_list()
+        if errors:
+            failed = ", ".join(f"{provider} ({error})" for provider, error in errors.items())
+            status.update(f"Refresh failed: {failed}. Cached models remain available.")
+        else:
+            status.update("Models refreshed. Exact provider/model IDs are also accepted.")
 
     def on_input_changed(self, event: Input.Changed):
         if event.input.id == "search-input":
             self.search_query = event.value
-            self._build_list(event.value)
+            self._filter_list()
 
     def on_input_submitted(self, event: Input.Submitted):
         if event.input.id == "search-input":
             self.action_select()
 
-    def action_move_up(self):
+    def _move_selection(self, delta: int):
         if not self.visible_items:
             return
+        index = max(0, min(self.selected_index + delta, len(self.visible_items) - 1))
+        if index == self.selected_index:
+            return
         self.visible_items[self.selected_index].set_selected(False)
-        self.selected_index = (self.selected_index - 1) % len(self.visible_items)
-        self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.selected_index = index
+        self.visible_items[index].set_selected(True)
+        self._scroll_selection()
+        self.call_after_refresh(self._scroll_selection, self.visible_items[index].item_id)
+
+    def action_move_up(self):
+        self._move_selection(-1)
 
     def action_move_down(self):
-        if not self.visible_items:
-            return
-        self.visible_items[self.selected_index].set_selected(False)
-        self.selected_index = (self.selected_index + 1) % len(self.visible_items)
-        self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self._move_selection(1)
 
     def action_select(self):
         if self.visible_items:
@@ -359,29 +352,26 @@ class ModelSelectModal(ModalScreen):
     def action_connect_provider(self):
         self.dismiss("__connect_provider__")
 
-    def on_key(self, event: events.Key):
-        if event.key == "ctrl+a":
-            event.prevent_default()
-            event.stop()
-            self.action_connect_provider()
-
 
 class ProviderConnectModal(ModalScreen):
     """Modal for connecting a provider"""
 
     CSS = """
     ProviderConnectModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 70;
-        height: auto;
-        max-height: 80%;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
+        height: 24;
+        max-height: 100%;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -402,22 +392,26 @@ class ProviderConnectModal(ModalScreen):
 
     #search-input {
         margin-bottom: 1;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #provider-list {
-        height: auto;
-        max-height: 20;
+        height: 1fr;
+        min-height: 1;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
         padding: 0;
     }
 
     .group-header {
-        color: $secondary;
+        color: $text-muted;
         text-style: bold;
         padding: 1 0 0 0;
     }
@@ -428,25 +422,25 @@ class ProviderConnectModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
     }
 
-    ModalListItem.-selected .item-content {
-        color: $background;
-        text-style: bold;
+    ModalListItem.-selected:ansi {
+        text-style: reverse;
     }
     """
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
         Binding("enter", "select", "Select", show=False),
     ]
 
-    def __init__(self):
+    def __init__(self, config: Config | None = None):
         super().__init__()
+        self.config = config
         self.selected_index = 0
         self.visible_items: list[ModalListItem] = []
         self.search_query = ""
@@ -459,42 +453,32 @@ class ProviderConnectModal(ModalScreen):
             yield Input(placeholder="Search", id="search-input")
             yield VerticalScroll(id="provider-list")
 
-    def on_mount(self):
-        self._build_list()
+    async def on_mount(self):
+        if self.config is None:
+            agent = getattr(self.app, "agent", None)
+            self.config = agent.config if agent else Config.load(directory=getattr(self.app, "directory", None))
+        await self._build_list()
         self.query_one("#search-input", Input).focus()
 
-    def _build_list(self, filter_text: str = ""):
+    async def _build_list(self, filter_text: str = ""):
         container = self.query_one("#provider-list", VerticalScroll)
-        container.remove_children()
+        await container.remove_children()
         self.visible_items = []
-
-        filter_lower = filter_text.lower()
-
-        for group_name, providers in PROVIDERS.items():
-            filtered_providers = [
-                p for p in providers
-                if filter_lower in p["name"].lower() or filter_lower in p.get("hint", "").lower()
-            ] if filter_text else providers
-
-            if not filtered_providers:
+        query = filter_text.strip().lower()
+        for provider, spec in provider_specs(self.config).items():
+            if query and query not in f"{provider} {spec.name}".lower():
                 continue
-
-            container.mount(Static(group_name, classes="group-header"))
-
-            for provider in filtered_providers:
-                hint = provider.get("hint", "")
-                item = ModalListItem(provider["id"], provider["name"], hint)
-                container.mount(item)
-                self.visible_items.append(item)
-
+            hint = "Local models" if provider == "ollama" else "API key"
+            self.visible_items.append(ModalListItem(provider, spec.name, hint))
+        self.selected_index = 0
         if self.visible_items:
-            self.selected_index = 0
+            await container.mount(*self.visible_items)
             self.visible_items[0].set_selected(True)
 
-    def on_input_changed(self, event: Input.Changed):
+    async def on_input_changed(self, event: Input.Changed):
         if event.input.id == "search-input":
             self.search_query = event.value
-            self._build_list(event.value)
+            await self._build_list(event.value)
 
     def on_input_submitted(self, event: Input.Submitted):
         if event.input.id == "search-input":
@@ -506,7 +490,7 @@ class ProviderConnectModal(ModalScreen):
         self.visible_items[self.selected_index].set_selected(False)
         self.selected_index = (self.selected_index - 1) % len(self.visible_items)
         self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
 
     def action_move_down(self):
         if not self.visible_items:
@@ -514,7 +498,7 @@ class ProviderConnectModal(ModalScreen):
         self.visible_items[self.selected_index].set_selected(False)
         self.selected_index = (self.selected_index + 1) % len(self.visible_items)
         self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
 
     def action_select(self):
         if self.visible_items:
@@ -593,17 +577,20 @@ class AuthMethodModal(ModalScreen):
 
     CSS = """
     AuthMethodModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 60;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
         height: auto;
-        max-height: 80%;
+        max-height: 100%;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -624,12 +611,14 @@ class AuthMethodModal(ModalScreen):
 
     #search-input {
         margin-bottom: 1;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #method-list {
@@ -644,20 +633,19 @@ class AuthMethodModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
     }
 
-    ModalListItem.-selected .item-content {
-        color: $background;
-        text-style: bold;
+    ModalListItem.-selected:ansi {
+        text-style: reverse;
     }
     """
 
     BINDINGS = [
         Binding("escape", "dismiss_modal", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
         Binding("enter", "select", "Select", show=False),
     ]
 
@@ -737,16 +725,21 @@ class ClaudeOAuthModal(ModalScreen):
 
     CSS = """
     ClaudeOAuthModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 70;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
         height: auto;
+        max-height: 100%;
+        overflow-y: auto;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -779,12 +772,14 @@ class ClaudeOAuthModal(ModalScreen):
 
     #code-input {
         margin: 1 0;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #code-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #footer-hint {
@@ -861,17 +856,20 @@ class ThemeSelectModal(ModalScreen):
 
     CSS = """
     ThemeSelectModal {
-        align: center middle;
+        align: left bottom;
+        padding: 0;
         background: transparent;
     }
 
     #modal-container {
-        width: 50;
-        height: auto;
-        max-height: 70%;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
+        height: 24;
+        max-height: 100%;
         background: $surface;
-        border: tall $secondary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -892,22 +890,26 @@ class ThemeSelectModal(ModalScreen):
 
     #search-input {
         margin-bottom: 1;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #search-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #theme-list {
-        height: auto;
-        max-height: 20;
+        height: 1fr;
+        min-height: 1;
+        scrollbar-gutter: stable;
+        scrollbar-size: 1 1;
         padding: 0;
     }
 
     .group-header {
-        color: $secondary;
+        color: $text-muted;
         text-style: bold;
         padding: 1 0 0 0;
     }
@@ -918,24 +920,23 @@ class ThemeSelectModal(ModalScreen):
     }
 
     ModalListItem.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
     }
 
-    ModalListItem.-selected .item-content {
-        color: $background;
-        text-style: bold;
+    ModalListItem.-selected:ansi {
+        text-style: reverse;
     }
     """
 
     BINDINGS = [
         Binding("escape", "dismiss_modal", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
         Binding("enter", "select", "Select", show=False),
     ]
 
-    def __init__(self, current_theme: str = "dark"):
+    def __init__(self, current_theme: str = "terminal"):
         super().__init__()
         self.current_theme = current_theme
         self.original_theme = current_theme  # Store original to restore on cancel
@@ -951,12 +952,15 @@ class ThemeSelectModal(ModalScreen):
             yield VerticalScroll(id="theme-list")
 
     def on_mount(self):
+        self.original_theme = self.app.theme
         self._build_list()
         self.query_one("#search-input", Input).focus()
 
     def _preview_theme(self, theme_name: str):
         """Apply theme preview without saving"""
-        self.app.theme = f"codesm-{theme_name}"
+        from .themes import THEMES
+
+        self.app.theme = THEMES[theme_name].name
 
     def _build_list(self, filter_text: str = ""):
         from .themes import THEME_DEFINITIONS
@@ -1003,7 +1007,7 @@ class ThemeSelectModal(ModalScreen):
         self.visible_items[self.selected_index].set_selected(False)
         self.selected_index = (self.selected_index - 1) % len(self.visible_items)
         self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
         # Preview the theme
         self._preview_theme(self.visible_items[self.selected_index].item_id)
 
@@ -1013,7 +1017,7 @@ class ThemeSelectModal(ModalScreen):
         self.visible_items[self.selected_index].set_selected(False)
         self.selected_index = (self.selected_index + 1) % len(self.visible_items)
         self.visible_items[self.selected_index].set_selected(True)
-        self.visible_items[self.selected_index].scroll_visible()
+        self.visible_items[self.selected_index].scroll_visible(animate=False, immediate=True)
         # Preview the theme
         self._preview_theme(self.visible_items[self.selected_index].item_id)
 
@@ -1024,7 +1028,7 @@ class ThemeSelectModal(ModalScreen):
 
     def action_dismiss_modal(self):
         # Restore original theme on cancel
-        self._preview_theme(self.original_theme)
+        self.app.theme = self.original_theme
         self.dismiss(None)
 
 
@@ -1033,16 +1037,21 @@ class APIKeyInputModal(ModalScreen):
 
     CSS = """
     APIKeyInputModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 70;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
         height: auto;
+        max-height: 100%;
+        overflow-y: auto;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -1067,12 +1076,14 @@ class APIKeyInputModal(ModalScreen):
 
     #api-key-input {
         margin: 1 0;
-        border: tall $secondary;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel;
     }
 
     #api-key-input:focus {
-        border: tall $secondary;
+        border: none;
     }
 
     #footer-hint {
@@ -1085,17 +1096,18 @@ class APIKeyInputModal(ModalScreen):
         Binding("escape", "dismiss_modal", "Close", show=False),
     ]
 
-    def __init__(self, provider: str = "anthropic"):
+    def __init__(self, provider: str = "anthropic", provider_name: str | None = None):
         super().__init__()
         self.provider = provider
+        self.provider_name = provider_name or provider
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-container"):
             with Horizontal(id="modal-header"):
-                yield Static(f"Enter {self.provider.title()} API Key", id="modal-title")
+                yield Static(f"Enter {self.provider_name} API Key", id="modal-title", markup=False)
                 yield Static("esc", id="esc-hint")
             yield Static("Paste your API key below:", id="instructions")
-            yield Input(placeholder="sk-ant-...", id="api-key-input", password=True)
+            yield Input(placeholder="API key", id="api-key-input", password=True)
             yield Static("[bold]enter[/] submit", id="footer-hint")
 
     def on_mount(self):
@@ -1116,17 +1128,20 @@ class PermissionModal(ModalScreen):
 
     CSS = """
     PermissionModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.7);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #permission-container {
+        margin: 0 2 4 2;
         width: 80;
+        max-width: 100%;
         height: auto;
-        max-height: 80%;
+        max-height: 100%;
         background: $surface;
-        border: tall $warning;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #permission-header {
@@ -1147,34 +1162,48 @@ class PermissionModal(ModalScreen):
     }
 
     #permission-description {
-        margin: 1 0;
-        padding: 1;
-        background: $panel;
+        margin: 0 0 1 0;
+        background: transparent;
         height: auto;
-        max-height: 30;
+        max-height: 30vh;
         overflow-y: auto;
     }
 
     #command-display {
-        margin: 1 0;
-        padding: 1;
-        background: $background;
+        height: auto;
+        max-height: 20vh;
+        overflow-y: auto;
+        padding: 0 1;
+        background: $panel;
         color: $text;
     }
 
     #button-row {
-        height: 3;
+        height: 1;
         margin-top: 1;
-        align: center middle;
     }
 
     #button-row Button {
-        margin: 0 1;
-        min-width: 16;
+        width: 1fr;
+        min-width: 0;
+        height: 1;
+        border: none;
+        padding: 0 1;
+        background: $panel;
+        color: $text;
+    }
+
+    #button-row Button:focus {
+        background: $boost;
+        text-style: bold underline;
+    }
+
+    #button-row Button:focus:ansi {
+        text-style: bold reverse;
     }
 
     #hint-row {
-        height: 1;
+        height: auto;
         margin-top: 1;
         color: $text-muted;
         text-align: center;
@@ -1197,20 +1226,20 @@ class PermissionModal(ModalScreen):
 
         with Vertical(id="permission-container"):
             with Horizontal(id="permission-header"):
-                yield Static(f"{self.request.title}", id="permission-title")
-                yield Static(f"[{self.request.type}]", id="permission-type")
+                yield Static(self.request.title, id="permission-title", markup=False)
+                yield Static(self.request.type, id="permission-type", markup=False)
 
             # Render description as markdown for syntax highlighting
             yield Static(styled_markdown(self.request.description), id="permission-description")
-            yield Static(f"Command: {self.request.command}", id="command-display")
+            yield Static(f"Command: {self.request.command}", id="command-display", markup=False)
             
             with Horizontal(id="button-row"):
-                yield Button("Allow Once (y)", id="btn-allow-once", variant="success")
-                yield Button("Allow Always (a)", id="btn-allow-always", variant="primary")
-                yield Button("Deny (n)", id="btn-deny", variant="error")
+                yield Button("y Once", id="btn-allow-once", variant="success")
+                yield Button("a Always", id="btn-allow-always", variant="primary")
+                yield Button("n Deny", id="btn-deny", variant="error")
             
             yield Static(
-                "[y] allow once  [a] allow always  [n/esc] deny",
+                "y allow once · a allow always · n/esc deny",
                 id="hint-row",
             )
 
@@ -1237,16 +1266,21 @@ class ModeSelectModal(ModalScreen):
 
     CSS = """
     ModeSelectModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #modal-container {
-        width: 60;
+        margin: 0 2 4 2;
+        width: 76;
+        max-width: 100%;
         height: auto;
+        max-height: 100%;
+        overflow-y: auto;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #modal-header {
@@ -1271,14 +1305,19 @@ class ModeSelectModal(ModalScreen):
     }
 
     .mode-item {
-        height: 3;
+        height: auto;
+        min-height: 2;
         padding: 0 1;
         margin: 0 0 1 0;
     }
 
     .mode-item.-selected {
-        background: $secondary;
-        color: $background;
+        background: $boost;
+        color: $text;
+    }
+
+    .mode-item.-selected:ansi {
+        text-style: reverse;
     }
 
     .mode-name {
@@ -1290,11 +1329,11 @@ class ModeSelectModal(ModalScreen):
     }
 
     .mode-item.-selected .mode-description {
-        color: $background;
+        color: $text;
     }
 
     #mode-footer {
-        height: 1;
+        height: auto;
         margin-top: 1;
         color: $text-muted;
     }
@@ -1302,8 +1341,8 @@ class ModeSelectModal(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "dismiss_modal", "Close", show=False),
-        Binding("up", "move_up", "Up", show=False),
-        Binding("down", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False, priority=True),
+        Binding("down", "move_down", "Down", show=False, priority=True),
         Binding("enter", "select", "Select", show=False),
         Binding("s", "select_smart", "Smart", show=False),
         Binding("r", "select_rush", "Rush", show=False),
@@ -1329,11 +1368,10 @@ class ModeSelectModal(ModalScreen):
                 
                 # Rush mode
                 with Vertical(id="mode-rush", classes="mode-item"):
-                    yield Static("[bold]Rush[/bold] [dim]67% cheaper, 50% faster[/dim]", classes="mode-name")
-                    yield Static("For simple, well-defined tasks", classes="mode-description")
+                    yield Static("[bold]Rush[/bold]", classes="mode-name")
+                    yield Static("Faster model for simple, well-defined tasks", classes="mode-description")
             
-            with Horizontal(id="mode-footer"):
-                yield Static("[s] smart  [r] rush  [enter] select")
+            yield Static("s smart · r rush · enter select", id="mode-footer")
 
     def on_mount(self):
         self._update_selection()
@@ -1395,17 +1433,20 @@ class DiffPreviewModal(ModalScreen):
 
     CSS = """
     DiffPreviewModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.7);
+        align: left bottom;
+        padding: 0;
+        background: transparent;
     }
 
     #diff-container {
+        margin: 0 2 4 2;
         width: 100;
-        height: auto;
-        max-height: 85%;
+        max-width: 100%;
+        height: 24;
+        max-height: 100%;
         background: $surface;
-        border: tall $primary;
-        padding: 1 2;
+        border: round $panel;
+        padding: 0 1;
     }
 
     #diff-header {
@@ -1416,21 +1457,21 @@ class DiffPreviewModal(ModalScreen):
 
     #diff-title {
         text-style: bold;
-        color: $primary;
+        color: $text;
         width: 1fr;
     }
 
     #diff-file-info {
         width: auto;
+        max-width: 60%;
         color: $text-muted;
     }
 
     #diff-content {
-        margin: 1 0;
-        padding: 1;
+        padding: 0 1;
         background: $panel;
-        height: auto;
-        max-height: 50;
+        height: 1fr;
+        min-height: 1;
         overflow-y: auto;
     }
 
@@ -1441,11 +1482,11 @@ class DiffPreviewModal(ModalScreen):
     }
 
     .diff-added {
-        color: #a6da95;
+        color: $success;
     }
 
     .diff-removed {
-        color: #ed8796;
+        color: $error;
     }
 
     .diff-context {
@@ -1453,18 +1494,31 @@ class DiffPreviewModal(ModalScreen):
     }
 
     #button-row {
-        height: 3;
+        height: 1;
         margin-top: 1;
-        align: center middle;
     }
 
     #button-row Button {
-        margin: 0 1;
-        min-width: 16;
+        width: 1fr;
+        min-width: 0;
+        height: 1;
+        border: none;
+        padding: 0 1;
+        background: $panel;
+        color: $text;
+    }
+
+    #button-row Button:focus {
+        background: $boost;
+        text-style: bold underline;
+    }
+
+    #button-row Button:focus:ansi {
+        text-style: bold reverse;
     }
 
     #hint-row {
-        height: 1;
+        height: auto;
         margin-top: 1;
         color: $text-muted;
         text-align: center;
@@ -1519,28 +1573,26 @@ class DiffPreviewModal(ModalScreen):
         with Vertical(id="diff-container"):
             with Horizontal(id="diff-header"):
                 yield Static(f"Preview: {self.tool_name.title()}", id="diff-title")
-                yield Static(f"[{path.name}]", id="diff-file-info")
+                yield Static(path.name, id="diff-file-info", markup=False)
 
             yield Static(diff_text, id="diff-content")
             yield Static(f"[green]+{added}[/] [red]-{removed}[/] lines", id="diff-stats")
             
             with Horizontal(id="button-row"):
-                yield Button("Apply (y)", id="btn-apply", variant="success")
-                yield Button("Skip (s)", id="btn-skip", variant="warning")
-                yield Button("Cancel (n)", id="btn-cancel", variant="error")
+                yield Button("y Apply", id="btn-apply", variant="success")
+                yield Button("s Skip", id="btn-skip", variant="warning")
+                yield Button("n Cancel", id="btn-cancel", variant="error")
             
             yield Static(
-                "[y/enter] apply  [s] skip this edit  [n/esc] cancel all",
+                "y/enter apply · s skip · n/esc cancel all",
                 id="hint-row",
             )
 
     def _format_diff(self, diff_lines: list[str]) -> str:
         """Format diff lines with Rich markup for colors"""
-        from rich.text import Text
-        
         result = []
         for line in diff_lines[:100]:  # Limit to 100 lines
-            line = line.rstrip('\n')
+            line = escape(line.rstrip('\n'))
             if line.startswith('+++') or line.startswith('---'):
                 result.append(f"[bold]{line}[/]")
             elif line.startswith('@@'):

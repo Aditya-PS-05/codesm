@@ -18,16 +18,17 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaProvider(Provider):
+    provider_id = "ollama"
     """Provider for local Ollama models"""
     
-    def __init__(self, model: str, host: str | None = None):
+    def __init__(self, model: str, host: str | None = None, settings=None):
         if not OLLAMA_AVAILABLE:
             raise ImportError(
                 "Ollama package not installed. Install with: uv add ollama"
             )
         
         self.model = model
-        self.host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        self.host = host or (settings.base_url if settings else None) or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         self.client = AsyncClient(host=self.host)
     
     def _convert_tools(self, tools: list[dict] | None) -> list[dict] | None:
@@ -55,10 +56,13 @@ class OllamaProvider(Provider):
             role = msg.get("role")
             
             if role == "user":
-                full_messages.append({
-                    "role": "user",
-                    "content": msg.get("content", ""),
-                })
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    full_messages.append({"role": "user",
+                        "content": "\n".join(c["text"] for c in content if c["type"] == "text"),
+                        "images": [c["image_url"]["url"].split(",", 1)[1] for c in content if c["type"] == "image_url"]})
+                else:
+                    full_messages.append({"role": "user", "content": content})
             
             elif role == "assistant":
                 assistant_msg = {
@@ -79,7 +83,7 @@ class OllamaProvider(Provider):
         
         return full_messages
     
-    async def stream(
+    async def _stream(
         self,
         system: str,
         messages: list[dict],
@@ -97,6 +101,7 @@ class OllamaProvider(Provider):
             "model": self.model,
             "messages": full_messages,
             "stream": True,
+            "options": {"num_predict": getattr(self, "options", {}).get("max_output_tokens", 8192)},
         }
         
         if ollama_tools:
@@ -107,41 +112,50 @@ class OllamaProvider(Provider):
         logger.info("Ollama API request sent, awaiting response...")
         
         try:
-            async for chunk in await self.client.chat(**kwargs):
-                message = chunk.get("message", {})
+            from contextlib import aclosing
+            done = False
+            async with aclosing(await self.client.chat(**kwargs)) as stream:
+                async for chunk in stream:
+                    message = chunk.get("message", {})
                 
-                if message.get("content"):
-                    yield StreamChunk(type="text", content=message["content"])
+                    if message.get("content"):
+                        yield StreamChunk(type="text", content=message["content"])
                 
-                if message.get("tool_calls"):
-                    for idx, tc in enumerate(message["tool_calls"]):
-                        if idx not in tool_calls_accumulator:
-                            tool_calls_accumulator[idx] = {
-                                "id": f"call_{idx}",
-                                "name": "",
-                                "arguments": "",
-                            }
+                    if message.get("tool_calls"):
+                        for idx, tc in enumerate(message["tool_calls"]):
+                            if idx not in tool_calls_accumulator:
+                                tool_calls_accumulator[idx] = {
+                                    "id": f"call_{idx}",
+                                    "name": "",
+                                    "arguments": "",
+                                }
                         
-                        acc = tool_calls_accumulator[idx]
-                        func = tc.get("function", {})
+                            acc = tool_calls_accumulator[idx]
+                            func = tc.get("function", {})
                         
-                        if func.get("name"):
-                            acc["name"] = func["name"]
-                        if func.get("arguments"):
-                            if isinstance(func["arguments"], dict):
-                                acc["arguments"] = json.dumps(func["arguments"])
-                            else:
-                                acc["arguments"] += str(func["arguments"])
+                            if func.get("name"):
+                                acc["name"] = func["name"]
+                            if func.get("arguments"):
+                                if isinstance(func["arguments"], dict):
+                                    acc["arguments"] = json.dumps(func["arguments"])
+                                else:
+                                    acc["arguments"] += str(func["arguments"])
                 
-                if chunk.get("done"):
-                    break
+                    if chunk.get("done"):
+                        done = True
+                        if chunk.get("prompt_eval_count") is not None:
+                            yield StreamChunk(type="usage", metadata={"input_tokens": chunk["prompt_eval_count"], "output_tokens": chunk.get("eval_count", 0)})
+                        break
             
+            if not done:
+                raise ValueError("Ollama stream ended before completion")
+
             for idx in sorted(tool_calls_accumulator.keys()):
                 tc = tool_calls_accumulator[idx]
                 try:
                     args = json.loads(tc["arguments"]) if tc["arguments"] else {}
                 except json.JSONDecodeError:
-                    args = {}
+                    args = tc["arguments"]
                 
                 yield StreamChunk(
                     type="tool_call",

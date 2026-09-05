@@ -2,6 +2,8 @@
 
 import asyncio
 import time
+import os
+import signal
 from pathlib import Path
 from .base import Tool
 
@@ -39,8 +41,14 @@ class BashTool(Tool):
         start_time = time.time()
         
         command = args["command"]
+        if not isinstance(command, str) or not command.strip():
+            return "Error: command must be a nonempty string"
+        if context.get("read_only"):
+            return "Permission denied: shell execution is unavailable in a read-only task"
         cwd = args.get("cwd") or context.get("cwd", ".")
         timeout = args.get("timeout", 120)
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+            return "Error: timeout must be positive"
         dry_run = args.get("dry_run", False)
         
         # Check global dry_run mode
@@ -102,12 +110,14 @@ class BashTool(Tool):
         
         exit_code = None
         output = ""
+        proc = None
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
                 cwd=cwd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
             
             stdout, stderr = await asyncio.wait_for(
@@ -115,7 +125,7 @@ class BashTool(Tool):
                 timeout=timeout,
             )
             
-            output = stdout.decode() + stderr.decode()
+            output = stdout.decode(errors="replace") + stderr.decode(errors="replace")
             exit_code = proc.returncode
             if exit_code != 0:
                 output += f"\n\nExit code: {exit_code}"
@@ -125,6 +135,19 @@ class BashTool(Tool):
         except Exception as e:
             output = f"Error executing command: {e}"
             exit_code = -1
+        finally:
+            # Kill the entire shell process group, including surviving grandchildren.
+            if proc is not None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await proc.wait()
+
+        from codesm.agent.execution import emit
+        context["command_result"] = {"command": command, "cwd": str(cwd), "exit_code": exit_code, "output": output[-4000:]}
+        emit(context, "command_result", command=command, cwd=str(cwd), exit_code=exit_code,
+             output=output[-4000:], duration_ms=int((time.time() - start_time) * 1000))
         
         # Audit the bash execution
         try:

@@ -1,12 +1,14 @@
 """File-based storage"""
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
 
 class Storage:
-    BASE_DIR = Path.home() / ".local" / "share" / "codesm"
+    BASE_DIR = Path(os.environ.get("CODESM_DATA_DIR", Path.home() / ".local" / "share" / "codesm")).expanduser()
     
     @classmethod
     def _key_to_path(cls, key: list[str]) -> Path:
@@ -17,7 +19,17 @@ class Storage:
         """Write data to storage"""
         path = cls._key_to_path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2, default=str))
+        text = json.dumps(data, indent=2, default=str)
+        fd, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as stream:
+                stream.write(text)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
     
     @classmethod
     def read(cls, key: list[str]) -> Any | None:

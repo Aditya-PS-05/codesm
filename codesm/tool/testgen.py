@@ -70,23 +70,6 @@ class TestGenTool(Tool):
             "required": ["file"],
         }
     
-    def _get_client(self) -> httpx.AsyncClient:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not set")
-        
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=120.0,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://github.com/Aditya-PS-05",
-                    "X-Title": "codesm-testgen",
-                },
-            )
-        return self._client
-    
     async def execute(self, args: dict, context: dict) -> str:
         file_path = args.get("file")
         function_name = args.get("function")
@@ -205,7 +188,6 @@ class TestGenTool(Tool):
         existing_tests: str,
     ) -> str:
         """Generate tests using LLM"""
-        client = self._get_client()
         
         prompt_parts = [
             f"Generate {framework} tests for this code:\n",
@@ -220,25 +202,9 @@ class TestGenTool(Tool):
         if existing_tests:
             prompt_parts.append(f"\n{existing_tests}\n\nMatch the style of existing tests.")
         
-        response = await client.post(
-            OPENROUTER_URL,
-            json={
-                "model": TESTGEN_MODEL,
-                "messages": [
-                    {"role": "system", "content": TESTGEN_SYSTEM_PROMPT},
-                    {"role": "user", "content": "".join(prompt_parts)},
-                ],
-                "temperature": 0.2,
-                "max_tokens": 4096,
-            },
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"API error: {response.status_code}")
-        
-        data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        
+        from codesm.provider.base import complete
+        content = await complete(TESTGEN_SYSTEM_PROMPT, "".join(prompt_parts))
+
         if "```" in content:
             import re
             match = re.search(r"```(?:\w+)?\n(.*?)```", content, re.DOTALL)

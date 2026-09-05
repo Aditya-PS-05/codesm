@@ -71,6 +71,9 @@ class TaskTool(Tool):
         
         # Auto-routing: let the router pick the best subagent
         routing_info = ""
+        decision = None
+        if subagent_type == "auto" and getattr(context.get("config"), "delegation", "adaptive") == "specialists":
+            return "Error: Specialists mode requires an explicit subagent_type"
         if subagent_type == "auto":
             try:
                 decision = await route_task(prompt)
@@ -112,6 +115,8 @@ class TaskTool(Tool):
                 directory=Path(workspace_dir),
                 parent_model=parent_model,
                 parent_tools=parent_tools,
+                parent_context=context,
+                model_override=decision.recommended_model if decision else None,
             )
             
             result = await subagent.run(prompt)
@@ -120,7 +125,7 @@ class TaskTool(Tool):
             
         except Exception as e:
             logger.exception(f"Subagent {subagent_type} failed")
-            return f"**Task Failed** ({description})\n\nError: {e}"
+            return f"Error: Task failed ({description})\n\n{e}"
     
     def _format_result(self, description: str, subagent_type: str, result: str) -> str:
         """Format the subagent result for display"""
@@ -206,6 +211,10 @@ class ParallelTaskTool(Tool):
         tasks = args.get("tasks", [])
         fail_fast = args.get("fail_fast", False)
         
+        if not isinstance(tasks, list) or any(not isinstance(t, dict) or not t.get("prompt") or not t.get("subagent_type") for t in tasks):
+            return "Error: Each task requires a prompt and subagent_type"
+        if getattr(context.get("config"), "delegation", "adaptive") == "specialists" and any(t["subagent_type"] == "auto" for t in tasks):
+            return "Error: Specialists mode requires explicit subagent types"
         if not tasks:
             return "Error: No tasks provided"
         
@@ -258,6 +267,7 @@ class ParallelTaskTool(Tool):
             try:
                 async with semaphore:
                     subagent_type = task["subagent_type"]
+                    decision = None
                     
                     # Auto-routing support
                     if subagent_type == "auto":
@@ -279,6 +289,8 @@ class ParallelTaskTool(Tool):
                         directory=Path(workspace_dir),
                         parent_model=parent_model,
                         parent_tools=parent_tools,
+                        parent_context=context,
+                        model_override=decision.recommended_model if decision else None,
                     )
                     
                     result = await subagent.run(task["prompt"])
@@ -288,7 +300,7 @@ class ParallelTaskTool(Tool):
                     task_result.duration_ms = int((time.time() - start_time) * 1000)
                     
             except asyncio.CancelledError:
-                task_result.error = "Cancelled"
+                raise
             except Exception as e:
                 task_result.error = str(e)
                 task_result.duration_ms = int((time.time() - start_time) * 1000)
@@ -304,11 +316,27 @@ class ParallelTaskTool(Tool):
         logger.info(f"Starting {len(tasks)} parallel subagent tasks")
         start_time = time.time()
         
-        results = await asyncio.gather(
-            *[run_task(t) for t in tasks],
-            return_exceptions=False  # Exceptions handled within run_task
-        )
-        
+        pending = [asyncio.create_task(run_task(t)) for t in tasks]
+        try:
+            if fail_fast:
+                for done in asyncio.as_completed(pending):
+                    result = await done
+                    if not result.success:
+                        for worker in pending:
+                            if not worker.done():
+                                worker.cancel()
+                        break
+            outcomes = await asyncio.gather(*pending, return_exceptions=True)
+            results = [value if isinstance(value, TaskResult) else TaskResult(
+                description=task.get("description", "Task"), subagent_type=task["subagent_type"],
+                error="Cancelled" if isinstance(value, asyncio.CancelledError) else str(value))
+                for task, value in zip(tasks, outcomes)]
+        finally:
+            for worker in pending:
+                if not worker.done():
+                    worker.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+
         total_duration_ms = int((time.time() - start_time) * 1000)
         
         # Compute summary stats
@@ -319,7 +347,7 @@ class ParallelTaskTool(Tool):
         output_parts = []
         
         # Header with summary
-        status_label = "[OK]" if failed == 0 else "[PARTIAL]" if successful > 0 else "[FAIL]"
+        status_label = "[OK]" if failed == 0 else "Error: [PARTIAL]" if successful > 0 else "Error: [FAIL]"
         output_parts.append(
             f"{status_label} **Parallel Tasks Complete**: "
             f"{successful}/{len(results)} succeeded in {total_duration_ms}ms"

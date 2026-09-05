@@ -45,7 +45,7 @@ class MultiEditTool(Tool):
         }
 
     async def execute(self, args: dict, context: dict) -> str:
-        path = Path(args["path"])
+        path = Path(context.get("cwd", ".")) / Path(args["path"]).expanduser()
         edits = args["edits"]
 
         if not path.exists():
@@ -99,7 +99,7 @@ class MultiEditTool(Tool):
             # Show diff preview if enabled (using test_content which has all edits applied)
             try:
                 from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
-                session_id = session.id if session else "default"
+                session_id = session.id if session else context.get("session_id", "default")
                 await request_diff_preview(
                     session_id=session_id,
                     file_path=str(path),
@@ -111,8 +111,8 @@ class MultiEditTool(Tool):
                 return f"MultiEdit skipped by user: {path.name}"
             except DiffPreviewCancelledError:
                 return f"MultiEdit cancelled by user"
-            except Exception:
-                pass  # If diff preview fails, proceed anyway
+            except Exception as error:
+                return f"Error: Could not confirm edit: {error}"
 
             # All edits valid, apply them for real
             results = []

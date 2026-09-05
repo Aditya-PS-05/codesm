@@ -58,7 +58,7 @@ class ReadThreadTool(Tool):
     
     async def execute(self, args: dict, context: dict) -> str:
         from codesm.session.session import Session
-        from codesm.provider.base import get_provider
+        from codesm.provider.base import complete
         
         thread_id = args.get("thread_id", "")
         goal = args.get("goal", "")
@@ -81,7 +81,6 @@ class ReadThreadTool(Tool):
         
         # Use Gemini Flash for fast extraction
         try:
-            provider = get_provider("finder")  # Gemini Flash
             
             user_prompt = f"""# Thread: {session.title}
 Thread ID: {thread_id}
@@ -95,15 +94,8 @@ Updated: {session.updated_at.strftime("%Y-%m-%d %H:%M")}
 
 Extract only the information relevant to the goal above."""
 
-            response_text = ""
-            async for chunk in provider.stream(
-                system=EXTRACT_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=None,
-            ):
-                if chunk.type == "text":
-                    response_text += chunk.content
-            
+            response_text = await complete(EXTRACT_SYSTEM_PROMPT, user_prompt, model="finder")
+
             return f"## Context from: {session.title}\n\n{response_text}"
             
         except Exception as e:

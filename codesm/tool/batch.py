@@ -51,7 +51,9 @@ class BatchTool(Tool):
         tool_calls = tool_calls[:10]
         discarded = len(args.get("tool_calls", [])) - len(tool_calls)
         
-        registry = ToolRegistry()
+        registry = context.get("tools")
+        if registry is None:
+            return "Error: No tool registry in execution context"
         results = []
         
         async def execute_one(call: dict) -> dict:
@@ -74,10 +76,11 @@ class BatchTool(Tool):
                 }
             
             try:
-                result = await tool.execute(params, context)
+                result = await registry.execute(tool_name, params, context)
                 return {
                     "tool": tool_name,
-                    "success": True,
+                    "success": not result.startswith(("Error", "Permission denied")),
+                    "error": result,
                     "result": result[:500] if len(result) > 500 else result,  # Truncate long results
                 }
             except Exception as e:
@@ -88,7 +91,8 @@ class BatchTool(Tool):
                 }
         
         # Execute all in parallel
-        results = await asyncio.gather(*[execute_one(call) for call in tool_calls])
+        # Preserve dependencies and the active registry's capability restrictions.
+        results = [await execute_one(call) for call in tool_calls]
         
         # Format output
         successful = sum(1 for r in results if r["success"])

@@ -1,327 +1,158 @@
-"""Terminal UI for codesm - OpenCode style layout"""
+"""Compact, full-width terminal conversation for codesm."""
+
+from contextlib import aclosing
 
 import asyncio
 from pathlib import Path
 import logging
-import traceback
+import time
 import uuid
 from textual.app import App, ComposeResult
-from textual.worker import Worker, WorkerState
+from textual import events
+from textual.worker import Worker
 
-from textual.containers import Container, Horizontal, Vertical, Center, VerticalScroll
-from textual.widgets import Input, Static, RichLog, Markdown
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.widgets import Input, Static
 from textual.binding import Binding
 
-from .themes import THEMES, get_next_theme
-from .modals import ModelSelectModal, ProviderConnectModal, AuthMethodModal, APIKeyInputModal, ThemeSelectModal, PermissionModal, ModeSelectModal, DiffPreviewModal, DiffPreviewResponse, RUSH_MODE_MODELS
+from .themes import THEMES
+from .modals import ModelSelectModal, ProviderConnectModal, APIKeyInputModal, ThemeSelectModal, PermissionModal, ModeSelectModal, DiffPreviewModal, DiffPreviewResponse
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
-from .chat import ChatMessage, ContextSidebar, PromptInput
+from .chat import ChatMessage
+from .clipboard import copy_text
 from .tools import (
-    ToolCallWidget, ToolResultWidget, ThinkingWidget, TodoListWidget,
-    ActionHeaderWidget, TreeConnectorWidget, StreamingTextWidget, CodeReviewWidget,
-    ToolTreeWidget, ThinkingTreeWidget, CollapsibleTreeGroup,
-    OracleTreeWidget, SubAgentTreeWidget, ContextBreadcrumbs, ClickablePath,
-    TOOL_CATEGORIES
+    TodoListWidget, StreamingTextWidget, ToolTreeWidget, ThinkingTreeWidget,
+    OracleTreeWidget, SubAgentTreeWidget, ClickablePath
 )
 from .autocomplete import AutocompletePopup
 from codesm.auth import ClaudeOAuth
+from codesm.config.config import Config
+from codesm.provider.catalog import canonical_provider, provider_specs
+from codesm.provider.router import ModelRouter
 from codesm.permission import get_permission_manager, PermissionRequest, PermissionResponse, respond_permission
 from codesm.diff_preview import get_diff_preview_manager, DiffPreviewRequest, respond_diff_preview
 from codesm.diff_preview import DiffPreviewResponse as DiffPreviewResponseEnum
 
 logger = logging.getLogger(__name__)
 
-LOGO = """
- ██████╗ ██████╗ ██████╗ ███████╗███████╗███╗   ███╗
-██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔════╝████╗ ████║
-██║     ██║   ██║██║  ██║█████╗  ███████╗██╔████╔██║
-██║     ██║   ██║██║  ██║██╔══╝  ╚════██║██║╚██╔╝██║
-╚██████╗╚██████╔╝██████╔╝███████╗███████║██║ ╚═╝ ██║
- ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝     ╚═╝
-"""
-
 VERSION = "0.1.0"
 
-
 class CodesmApp(App):
-    """Main TUI application - OpenCode style"""
+    """A conversation, a prompt, and the details when you need them."""
 
     CSS = """
     Screen {
         background: $background;
-    }
-
-    /* Footer styling - use theme colors */
-    Footer {
-        background: $surface;
-        color: $text-muted;
-    }
-
-    Footer > .footer--highlight {
-        background: transparent;
-        color: $secondary;
-        text-style: bold;
-    }
-
-    Footer > .footer--highlight-key {
-        background: $secondary;
-        color: $background;
-        text-style: bold;
-    }
-
-    Footer > .footer--key {
-        background: $primary;
         color: $foreground;
-        text-style: bold;
-    }
-
-    Footer > .footer--description {
-        color: $text-muted;
-    }
-
-    #main-container {
-        width: 100%;
-        height: 100%;
-        layout: horizontal;
-    }
-
-    #content-area {
-        width: 1fr;
-        height: 100%;
         layout: vertical;
     }
-
-    /* Welcome view styles */
-    #welcome-view {
-        width: 100%;
-        height: 100%;
-        align: center middle;
-    }
-
-    #logo {
-        text-align: center;
-        color: $foreground;
-        width: auto;
-        text-style: bold;
-    }
-
-    #version {
-        text-align: center;
-        color: $text-muted;
-        padding-bottom: 2;
-    }
-
-    #input-container {
-        width: 80;
-        height: auto;
-        align: center middle;
-        border-left: heavy $secondary;
-        background: $surface;
-        padding: 0 1;
-    }
-
-    #message-input {
-        width: 100%;
-        border: none;
-        background: $surface;
-        color: $foreground;
-        padding: 0 1;
-    }
-
-    #message-input:focus {
-        border: none;
-    }
-
-    #model-indicator {
-        color: $secondary;
-        text-style: bold;
-        padding: 0 1;
-    }
-
-    #hints {
-        text-align: center;
-        color: $text-muted;
-        padding-top: 2;
-    }
-
-    /* Chat view styles */
-    #chat-view {
-        width: 100%;
-        height: 100%;
-        layout: grid;
-        grid-size: 1 3;
-        grid-rows: auto 1fr auto;
-    }
-
-    .hidden {
-        display: none;
-    }
-
+    .hidden { display: none; }
     #chat-container {
         width: 100%;
-        height: 100%;
+        height: 1fr;
         background: $background;
         border: none;
-        align: left top;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: auto;
     }
-
-    #messages {
+    #welcome-view {
         width: 100%;
         height: auto;
-        padding: 0 2;
-        background: $background;
-    }
-
-    /* Message styles - OpenCode inspired */
-    ChatMessage.user {
-        border-left: heavy $secondary;
         padding: 1 2;
-        margin: 0;
-        background: $surface;
     }
-
-    ChatMessage.user:hover {
-        background: $panel;
-    }
-
-    ChatMessage.assistant {
-        padding: 1 2;
-        margin: 0;
-    }
-
-    .message-separator {
+    #logo { height: 1; text-style: bold; }
+    #model-indicator, #working-directory, #hints {
+        height: auto;
         color: $text-muted;
-        margin: 1 0;
-        height: 0;
     }
-
-    /* Chat input section - OpenCode style */
-    #chat-input-section {
-        height: auto;
+    #hints { margin-top: 1; }
+    #messages { width: 100%; height: auto; padding: 0; }
+    #messages.active { min-height: 100%; }
+    #chat-status-text {
+        height: 1;
         width: 100%;
-        background: $surface;
-        padding: 1;
-    }
-
-    #chat-input-wrapper {
-        border-left: heavy $secondary;
+        margin: 1 0;
         padding: 0 1;
+        color: $text-muted;
+    }
+    #chat-input-section {
+        width: 100%;
+        height: 3;
+        padding: 1 1;
         background: $surface;
     }
-
+    #prompt-marker { width: 2; height: 1; color: $text-muted; }
     #chat-message-input {
         width: 1fr;
+        height: 1;
+        min-width: 1;
         border: none;
+        padding: 0;
         background: transparent;
         color: $foreground;
     }
-
-    #chat-message-input:focus {
-        border: none;
-    }
-
-    #chat-hint-bar {
-        height: 1;
-        margin-top: 0;
-        padding: 0 1;
-    }
-
-    #chat-status-text {
-        width: 1fr;
-    }
-
-    #chat-hints {
-        width: auto;
-        text-align: right;
-        color: $text-muted;
-    }
-
-    /* Custom footer */
+    #chat-message-input:focus { border: none; background: transparent; }
+    #chat-message-input > .input--placeholder { color: $text-muted; }
     #custom-footer {
-        dock: bottom;
-        height: 1;
         width: 100%;
-        background: $surface;
+        height: 1;
+        padding: 0 1;
+        color: $text-muted;
+    }
+    #footer-hints { width: 1fr; height: 1; text-overflow: ellipsis; }
+    #footer-context {
+        width: auto;
+        max-width: 55%;
+        height: 1;
+        text-align: right;
+        text-overflow: ellipsis;
+    }
+    .run-outcome { height: auto; padding: 0 1; margin-top: 1; color: $warning; }
+    .run-outcome.verified { color: $success; }
+    Screen:ansi #chat-input-section {
+        background: ansi_default;
+        border-top: solid ansi_bright_black;
         padding: 0 1;
     }
-
-    #footer-mode-model {
-        width: auto;
-    }
-
-    #footer-spacer {
-        width: 1fr;
-    }
-
-    #footer-hints {
-        width: auto;
-        color: $text-muted;
-    }
-
-    /* Right sidebar */
-    #context-sidebar {
-        width: 42;
-        height: 100%;
-        background: $surface;
-        padding: 1 2;
-        border-left: solid $primary;
-    }
-
-    #context-sidebar .sidebar-section {
-        margin-bottom: 1;
-    }
-
-    #context-sidebar .sidebar-title {
-        text-style: bold;
-        margin-bottom: 1;
-    }
-
-    #context-sidebar .sidebar-value {
-        color: $text-muted;
-    }
-
-    #context-sidebar .sidebar-footer {
-        dock: bottom;
-        height: auto;
-        border-top: solid $primary;
-        padding-top: 1;
-    }
+    Screen:ansi #prompt-marker { text-style: bold; }
     """
 
     BINDINGS = [
-        Binding("ctrl+c", "quit", "Quit", show=True, priority=True),
-        Binding("ctrl+z", "cancel_or_quit", "Cancel/Quit", show=False, priority=True),
-        Binding("escape", "cancel_chat", "Cancel", show=False, priority=True),
-        Binding("ctrl+n", "new_session", "New Session", show=True, priority=True),
-        Binding("ctrl+l", "clear", "Clear", show=True),
-        Binding("ctrl+a", "connect_provider", "Connect Provider", show=False),
-        Binding("ctrl+t", "toggle_theme", "Theme", show=True),
-        Binding("ctrl+p", "show_command_palette", "Commands", show=True),
-        Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False),
-        Binding("tab", "toggle_mode", "Mode", show=True),
-        # Tree collapse/expand shortcuts
-        Binding("c", "collapse_all", "Collapse All", show=False),
-        Binding("e", "expand_all", "Expand All", show=False),
+        Binding("ctrl+c", "copy_or_cancel", "Copy/Interrupt/Quit", show=False, priority=True),
+        Binding("ctrl+shift+c", "copy_selection", "Copy selection", show=False, priority=True),
+        Binding("ctrl+z", "cancel_or_quit", "Interrupt/Quit", show=False, priority=True),
+        Binding("escape", "cancel_chat", "Interrupt", show=False, priority=True),
+        Binding("ctrl+n", "new_session", "New session", show=False, priority=True),
+        Binding("ctrl+l", "clear", "Clear", show=False),
+        Binding("ctrl+a", "connect_provider", "Connect", show=False),
+        Binding("ctrl+t", "toggle_transcript", "Transcript", show=False, priority=True),
+        Binding("ctrl+p", "show_command_palette", "Commands", show=False),
+        Binding("tab", "toggle_mode", "Queue/Mode", show=False, priority=True),
     ]
 
     def __init__(self, directory: Path, model: str, session_id: str | None = None):
-        super().__init__()
+        super().__init__(ansi_color=True)
         self.directory = directory
         self.model = model
         self._base_model = model  # Store the original model for mode switching
         self.agent = None
         self.session_id = session_id
         self.in_chat = False
-        self._theme_name = "dark"
+        self._theme_name = "terminal"
         self._showing_palette = False
+        self._mouse_pointer = ""
         self._claude_oauth = ClaudeOAuth()
-        self._sidebar_visible = True
         self._total_tokens = 0
         self._total_cost = 0.0
         self._pending_permission_requests: dict[str, PermissionRequest] = {}
         self._chat_worker: Worker | None = None
         self._cancel_requested = False
+        self._queued_messages: list[str] = []
+        self._transcript_expanded = False
+        self._processing = False
+        self._spinner_timer = None
+        self._context_left = 100
         self._mode = "smart"  # Agent mode: "smart" or "rush"
         self._showing_autocomplete = False
         self._autocomplete_trigger_pos = 0
@@ -338,50 +169,20 @@ class CodesmApp(App):
         diff_preview_manager.set_request_callback(self._on_diff_preview_request)
 
     def compose(self) -> ComposeResult:
-        with Container(id="main-container"):
-            with Vertical(id="content-area"):
-                with Vertical(id="welcome-view"):
-                    yield Center(Static(LOGO, id="logo"))
-                    yield Center(Static(VERSION, id="version"))
-                    with Center():
-                        with Vertical(id="input-container"):
-                            yield Input(
-                                placeholder="Build anything...",
-                                id="message-input"
-                            )
-                            yield Static(f"[bold #5dd9c1]Smart[/]  {self._short_model_name()}", id="model-indicator")
-                    yield Center(
-                        Static(
-                            "[dim]tab[/dim] switch mode  [dim]ctrl+p[/dim] commands",
-                            id="hints"
-                        )
-                    )
-
-                with Container(id="chat-view", classes="hidden"):
-                    # Context breadcrumbs at top of chat
-                    yield ContextBreadcrumbs(id="context-breadcrumbs")
-                    
-                    with VerticalScroll(id="chat-container"):
-                        yield Vertical(id="messages")
-                    
-                    with Vertical(id="chat-input-section"):
-                        with Vertical(id="chat-input-wrapper"):
-                            yield Input(
-                                placeholder="Ask anything...",
-                                id="chat-message-input"
-                            )
-                        
-                        with Horizontal(id="chat-hint-bar"):
-                            yield Static("", id="chat-status-text")
-                            yield Static("[dim]esc[/dim] to interrupt", id="chat-hints")
-
-            yield ContextSidebar(id="context-sidebar", classes="hidden")
-
-        # Custom footer with mode indicator instead of default Footer
+        with VerticalScroll(id="chat-container"):
+            with Vertical(id="welcome-view"):
+                yield Static(f"codesm · {VERSION}", id="logo", markup=False)
+                yield Static("", id="model-indicator", markup=False)
+                yield Static(str(self.directory), id="working-directory", markup=False)
+                yield Static("Describe a task to get started. / for commands · @ for files", id="hints")
+            yield Vertical(id="messages")
+        yield Static("", id="chat-status-text", classes="hidden", markup=False)
+        with Horizontal(id="chat-input-section"):
+            yield Static("›", id="prompt-marker")
+            yield Input(placeholder="Ask codesm to do anything", id="chat-message-input")
         with Horizontal(id="custom-footer"):
-            yield Static("[bold #5dd9c1]Smart[/] · claude-sonnet-4-20250514", id="footer-mode-model")
-            yield Static("", id="footer-spacer")
-            yield Static("[dim]^c[/dim] quit  [dim]^n[/dim] new  [dim]^p[/dim] commands  [dim]tab[/dim] mode", id="footer-hints")
+            yield Static("", id="footer-hints", markup=False)
+            yield Static("", id="footer-context", markup=False)
 
     def _short_model_name(self) -> str:
         """Get short display name for current model"""
@@ -391,30 +192,33 @@ class CodesmApp(App):
         return self.model
 
     def _get_mode_display(self) -> str:
-        """Get display string for current mode"""
-        if self._mode == "rush":
-            return "[bold #ff9800]Rush[/]"
-        return "[bold #5dd9c1]Smart[/]"
+        return self._mode.title()
 
     def _get_effective_model(self) -> str:
         """Get the effective model based on current mode"""
         if self._mode == "rush":
-            # Get provider from base model
-            provider = self._base_model.split("/")[0] if "/" in self._base_model else "anthropic"
-            return RUSH_MODE_MODELS.get(provider, "anthropic/claude-haiku-3.5")
+            provider, _ = ModelRouter.resolve_model(self._base_model)
+            spec = provider_specs(self._get_model_config()).get(provider)
+            if spec and spec.rush_model:
+                return f"{provider}/{spec.rush_model}"
         return self._base_model
 
+    def _get_model_config(self) -> Config:
+        return self.agent.config if self.agent else Config.load(directory=self.directory)
+
     def _get_active_input(self) -> Input:
-        """Get the currently active input"""
-        if self.in_chat:
-            return self.query_one("#chat-message-input", Input)
-        return self.query_one("#message-input", Input)
+        return self.query_one("#chat-message-input", Input)
 
     async def on_unmount(self):
         """Cleanup when app unmounts"""
+        self._set_mouse_pointer("")
         # Stop file watcher
         if self._file_watcher:
             await self._file_watcher.stop()
+        if self.agent:
+            await self.agent.cleanup()
+        get_permission_manager().set_request_callback(None)
+        get_diff_preview_manager().set_request_callback(None)
 
     async def on_mount(self):
         """Initialize when app mounts"""
@@ -427,11 +231,11 @@ class CodesmApp(App):
         
         # Load theme preference
         saved_theme = store.get_preferred_theme()
-        if saved_theme and saved_theme in [t.name.replace("codesm-", "") for t in THEMES.values()]:
+        if saved_theme in THEMES:
             self._theme_name = saved_theme
-            self.theme = f"codesm-{saved_theme}"
+            self.theme = THEMES[saved_theme].name
         else:
-            self.theme = "codesm-dark"
+            self.theme = THEMES["terminal"].name
         
         # Load mode preference
         saved_mode = store.get_preferred_mode()
@@ -444,22 +248,18 @@ class CodesmApp(App):
         from codesm.agent.agent import Agent
         from codesm.session.session import Session
         
-        # Update sidebar with working directory
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            sidebar.update_working_dir(f"~/{self.directory}")
-        except Exception:
-            pass
-        
+
         # Load previous session if session_id was provided, otherwise create new
         if self.session_id:
             session = Session.load(self.session_id)
             if session:
                 logger.info(f"Loaded previous session: {self.session_id}")
+                self.directory = session.directory
+                self.query_one("#working-directory", Static).update(str(self.directory))
                 self.agent = Agent(directory=self.directory, model=self.model, session=session)
                 # Switch to chat and display previous messages
                 self._switch_to_chat()
-                self._display_session_messages(session.get_messages_for_display())
+                await self._display_session_messages(session.get_messages_for_display())
             else:
                 logger.warning(f"Could not load session: {self.session_id}, creating new one")
                 self.agent = Agent(directory=self.directory, model=self.model)
@@ -475,8 +275,7 @@ class CodesmApp(App):
         # Start file watcher
         self._init_file_watcher()
 
-        input_widget = self.query_one("#message-input", Input)
-        input_widget.focus()
+        self._get_active_input().focus()
 
     def _init_lsp(self):
         """Initialize LSP servers in background"""
@@ -487,24 +286,8 @@ class CodesmApp(App):
                 from codesm import lsp
                 results = await lsp.init(str(self.directory))
                 
-                # Update sidebar with LSP status
-                servers = []
-                status = lsp.status()
-                for key, info in status.items():
-                    servers.append({
-                        "name": info["name"],
-                        "status": "connected" if info["running"] else "error",
-                    })
-                
-                if servers:
-                    try:
-                        sidebar = self.query_one("#context-sidebar", ContextSidebar)
-                        sidebar.update_lsp_status(servers)
-                    except Exception:
-                        pass
-                    
-                    self.notify(f"LSP: {len(servers)} server(s) connected")
-                    logger.info(f"LSP initialized: {results}")
+                logger.info(f"LSP initialized: {results}")
+
             except Exception as e:
                 logger.error(f"Failed to initialize LSP: {e}")
         
@@ -516,28 +299,12 @@ class CodesmApp(App):
         
         async def start_watcher():
             try:
-                from codesm.file_watcher import FileWatcher, ChangeType
+                from codesm.file_watcher import FileWatcher
                 
                 def on_file_change(change):
                     """Handle file change events"""
-                    # Format notification based on change type
-                    label = "[edit]" if change.change_type == ChangeType.MODIFIED else \
-                           "[new]" if change.change_type == ChangeType.CREATED else "[del]"
-
-                    self.notify(
-                        f"{label} {change.relative_path} {change.change_type.value}",
-                        timeout=2,
-                    )
-                    
-                    # Update sidebar if available
-                    try:
-                        sidebar = self.query_one("#context-sidebar", ContextSidebar)
-                        sidebar.update_file_change(change)
-                    except Exception:
-                        pass
-                    
                     logger.debug(f"File change: {change}")
-                
+
                 self._file_watcher = FileWatcher(
                     directory=self.directory,
                     on_change=on_file_change,
@@ -553,6 +320,8 @@ class CodesmApp(App):
 
     def on_input_changed(self, event: Input.Changed):
         """Handle input text changes - show command palette or autocomplete"""
+        if event.input.id != "chat-message-input":
+            return
         if self._showing_palette or self._showing_autocomplete:
             return
 
@@ -613,13 +382,13 @@ class CodesmApp(App):
     def _execute_command_sync(self, cmd: str):
         """Execute command synchronously, scheduling async operations"""
         if cmd == "/models":
-            self.push_screen(ModelSelectModal(self.model), self._on_model_selected)
+            self.push_screen(ModelSelectModal(self.model, self._get_model_config()), self._on_model_selected)
         elif cmd == "/theme":
             self.push_screen(ThemeSelectModal(self._theme_name), self._on_theme_selected)
         elif cmd == "/new":
             self.action_new_session()
         elif cmd == "/connect":
-            self.push_screen(ProviderConnectModal(), self._on_provider_selected)
+            self.action_connect_provider()
         elif cmd == "/session":
             self.push_screen(SessionListModal(), self._on_session_selected)
         elif cmd == "/mode":
@@ -636,6 +405,8 @@ class CodesmApp(App):
             self._toggle_dry_run()
         elif cmd == "/audit":
             self._show_audit_log()
+        elif cmd == "/debug":
+            self.notify("Use /debug <bug description> to start; /debug off to finish.")
         elif cmd == "/help":
             self.notify("Commands: /init, /new, /fork, /branches, /dryrun, /audit, /models, /mode, /session, /status, /theme, /connect, /help")
         elif cmd == "/status":
@@ -656,7 +427,7 @@ class CodesmApp(App):
         """Handle theme selection from modal"""
         if result:
             self._theme_name = result
-            self.theme = f"codesm-{result}"
+            self.theme = THEMES[result].name
             
             # Save theme preference
             from codesm.auth.credentials import CredentialStore
@@ -698,31 +469,11 @@ class CodesmApp(App):
         self.notify(f"{mode_name}: {model_short}")
 
     def _show_cost_stats(self):
-        """Show cost and usage statistics"""
-        try:
-            from codesm.agent.optimizer import get_optimizer
-            
-            optimizer = get_optimizer()
-            daily = optimizer.get_daily_stats()
-            session_stats = optimizer.get_session_stats()
-            
-            # Format output
-            daily_cost = optimizer.format_cost(daily['total_cost'])
-            budget_pct = daily['budget_used_pct']
-            remaining = optimizer.format_cost(daily['budget_remaining'])
-            
-            session_cost = optimizer.format_cost(session_stats.total_cost)
-            total_tokens = session_stats.total_input_tokens + session_stats.total_output_tokens
-            
-            msg = (
-                f"Session: {session_cost} ({total_tokens:,} tokens) | "
-                f"Today: {daily_cost} ({budget_pct:.0f}% of budget) | "
-                f"Remaining: {remaining}"
-            )
-            self.notify(msg)
-            
-        except Exception as e:
-            self.notify(f"Cost tracking unavailable: {e}")
+        stats = self.agent.budget.get_session_stats()
+        cost = "unknown (configure model_prices)" if stats.unpriced_requests else f"~${stats.total_cost:.4f}"
+        tokens = stats.total_input_tokens + stats.total_output_tokens
+        self.notify(f"Usage: {tokens:,} tokens · {stats.total_requests} requests · {cost} · "
+                    f"{stats.estimated_requests} estimated requests")
     
     def _run_init_command(self):
         """Initialize AGENTS.md for the current project"""
@@ -749,56 +500,47 @@ class CodesmApp(App):
             self.agent.rules.refresh()
 
     def _on_session_selected(self, result: str | None):
-        """Handle session selection"""
         if result:
-            from codesm.session.session import Session
-            session = Session.load(result)
-            if session:
-                # Update agent with loaded session
-                if self.agent:
-                    self.agent.session = session
-                
-                # Switch to chat view and display messages
-                self._switch_to_chat(show_session_start=False)
-                messages = session.get_messages_for_display()
-                self._display_session_messages(messages)
-                
-                self.notify(f"Loaded session: {session.title}")
-            else:
-                self.notify("Failed to load session")
-        
-        self._get_active_input().focus()
-    
-    async def _switch_to_session(self, session_id: str):
-        """Switch to a session by ID (async version for handoff)"""
-        from codesm.session.session import Session
-        session = Session.load(session_id)
-        if session:
-            # Update agent with new session
-            if self.agent:
-                self.agent.session = session
-            
-            # Clear current messages and switch to chat view
-            self._switch_to_chat(show_session_start=False)
-            
-            # Clear existing messages in the container
-            messages_container = self.query_one("#messages", Vertical)
-            await messages_container.remove_children()
-            
-            # Display new session messages
-            messages = session.get_messages_for_display()
-            self._display_session_messages(messages)
-            
-            self.notify(f"Handoff complete: {session.title}")
-            self._update_sidebar_title()
+            self.call_later(self._switch_to_session, result)
         else:
+            self._get_active_input().focus()
+
+    async def _switch_to_session(self, session_id: str):
+        from codesm.session.session import Session
+        if self.agent and self.agent._chat_active:
+            self.notify("Finish or cancel the active task before switching sessions")
+            return
+        session = Session.load(session_id)
+        if not session:
             self.notify(f"Failed to load session: {session_id}")
+            return
+        if session.directory != self.directory:
+            from codesm.agent.agent import Agent
+            replacement = Agent(directory=session.directory, model=self.model, session=session)
+            await self.agent.cleanup()
+            self.agent = replacement
+            self.directory = session.directory
+            self.query_one("#working-directory", Static).update(str(self.directory))
+            if self._file_watcher:
+                await self._file_watcher.stop()
+                self._file_watcher = None
+            self._init_file_watcher()
+            self._init_lsp()
+        else:
+            self.agent.session = session
+        self._queued_messages.clear()
+        self._switch_to_chat(show_session_start=False)
+        await self._display_session_messages(session.get_messages_for_display())
+        self._get_active_input().focus()
 
     def _on_model_selected(self, result: str | None):
         """Handle model selection"""
+        if result and self._chat_worker and self._chat_worker.is_running:
+            self.notify("Finish or interrupt the active task before switching models; its history is saved.")
+            return
         if result:
             if result == "__connect_provider__":
-                self.push_screen(ProviderConnectModal(), self._on_provider_selected)
+                self.action_connect_provider()
                 return
             
             # When user selects a model, store it as base and reset to smart mode
@@ -808,76 +550,52 @@ class CodesmApp(App):
             self._update_model_display()
             if self.agent:
                 self.agent.model = result
+                self.notify("Model changed. Saved conversation and task context retained.")
 
             # Save the model preference
             from codesm.auth.credentials import CredentialStore
             store = CredentialStore()
             store.set_preferred_model(result)
+            store.set_preferred_mode("smart")
             logger.info(f"Saved preferred model: {result}")
 
         self._get_active_input().focus()
 
     def _on_provider_selected(self, result: str | None):
         """Handle provider selection"""
-        if result:
-            if result == "anthropic":
-                self.push_screen(AuthMethodModal("anthropic"), self._on_auth_method_selected)
-            elif result == "openai":
-                self._pending_provider = "openai"
-                self.push_screen(APIKeyInputModal("openai"), self._on_api_key_entered)
-            elif result == "openrouter":
-                self._pending_provider = "openrouter"
-                self.push_screen(APIKeyInputModal("openrouter"), self._on_api_key_entered)
-            else:
-                self.notify(f"Selected provider: {result} (coming soon)")
-                self._get_active_input().focus()
-        else:
+        if not result:
             self._get_active_input().focus()
-
-    def _on_auth_method_selected(self, result: str | None):
-        """Handle auth method selection for Anthropic"""
-        if result:
-            if result == "manual-api-key":
-                self._pending_provider = "anthropic"
-                self.push_screen(APIKeyInputModal("anthropic"), self._on_api_key_entered)
-            elif result == "create-api-key":
-                import webbrowser
-                webbrowser.open("https://console.anthropic.com/settings/keys")
-                self.notify("Opening Anthropic console - copy your API key and use /connect again")
-                self._get_active_input().focus()
-        else:
+            return
+        provider = canonical_provider(result)
+        config = self._get_model_config()
+        spec = provider_specs(config).get(provider)
+        if not spec:
+            self.notify(f"Configure a base_url for provider {provider} first.")
             self._get_active_input().focus()
+        elif provider == "ollama":
+            self.push_screen(ModelSelectModal(self.model, config, provider=provider), self._on_model_selected)
+        else:
+            self._pending_provider = provider
+            self.push_screen(APIKeyInputModal(provider, spec.name), self._on_api_key_entered)
 
     def _on_api_key_entered(self, result: dict | None):
         """Handle API key entry for any provider"""
         if result:
             from codesm.auth.credentials import CredentialStore
-            provider = getattr(self, "_pending_provider", "anthropic")
+            provider = canonical_provider(result.get("provider") or self._pending_provider)
+            config = self._get_model_config()
+            spec = provider_specs(config).get(provider)
+            if not spec:
+                self.notify(f"Configure a base_url for provider {provider} first.")
+                self._get_active_input().focus()
+                return
             store = CredentialStore()
             store.set(provider, {"auth_type": "api_key", "api_key": result["api_key"]})
-            provider_name = provider.capitalize()
-
-            self.notify(f"{provider_name} API key saved!")
-
-            # Automatically switch to a model from this provider
-            default_models = {
-                "openai": "openai/gpt-4o",
-                "anthropic": "anthropic/claude-sonnet-4-20250514",
-                "google": "google/gemini-2.0-flash",
-                "openrouter": "openrouter/anthropic/claude-sonnet-4",
-            }
-
-            if provider in default_models:
-                new_model = default_models[provider]
-                self.model = new_model
-                self._update_model_display()
-                if self.agent:
-                    self.agent.model = new_model
-                store.set_preferred_model(new_model)
-                logger.info(f"Auto-switched to {new_model}")
-                self.notify(f"Switched to {new_model}")
-
-            self._get_active_input().focus()
+            self.notify(f"{spec.name} API key saved!")
+            if spec.models:
+                self._on_model_selected(f"{provider}/{spec.models[0]}")
+            else:
+                self.push_screen(ModelSelectModal(self.model, config, provider=provider), self._on_model_selected)
         else:
             self._get_active_input().focus()
 
@@ -886,59 +604,64 @@ class CodesmApp(App):
         self.notify(f"Copied: {event.path}")
     
     async def on_input_submitted(self, event: Input.Submitted):
-        """Handle message submission"""
+        if event.input.id != "chat-message-input":
+            return
         message = event.value.strip()
         if not message:
             return
-
-        if message.startswith("/"):
-            event.input.value = ""
+        event.input.value = ""
+        if message.startswith("/") and not message.startswith("/debug "):
             self._execute_command_sync(message)
             return
-
-        # Clear input immediately
-        event.input.value = ""
-
-        # Switch to chat view if needed (with session start indicator for new chats)
-        if not self.in_chat:
-            self._switch_to_chat(show_session_start=True)
-
-        # Get widgets
-        chat_input = self.query_one("#chat-message-input", Input)
-        chat_input.value = ""
-        chat_input.disabled = True
-
-        messages_container = self.query_one("#messages", Vertical)
-        logger.info(f"Messages container children count: {len(messages_container.children)}")
-
-        # Add user message first
-        user_msg = ChatMessage("user", message)
-        messages_container.mount(user_msg)
-
-        # Update status to show processing (after user message so it appears below)
-        self._set_processing_state(True, "Thinking...")
-
-        # Scroll to bottom to show latest messages
-        chat_container = self.query_one("#chat-container", VerticalScroll)
-        self.call_later(lambda: chat_container.scroll_end(animate=False))
-
-        logger.info("Mounted user message")
-
-        # Run chat in a worker so keybindings remain responsive
+        if self._chat_worker:
+            self._queue_message(message)
+            return
         self._cancel_requested = False
-        self._chat_worker = self.run_worker(
-            self._process_chat(message),
-            name="chat_worker",
-            exclusive=True,
-        )
+        self._chat_worker = self.run_worker(self._run_chat(message), name="chat_worker")
+
+    def _queue_message(self, message: str):
+        self._queued_messages.append(message)
+        self._animate_spinner()
+        self._update_footer()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "copy_selection":
+            return bool(self._selected_text())
+        if action in {"toggle_mode", "toggle_transcript", "cancel_chat", "new_session"}:
+            return len(self.screen_stack) == 1
+        return True
+
+    async def _run_chat(self, message: str):
+        """Keep follow-ups in the same worker so agent runs never overlap."""
+        try:
+            first_message = True
+            while message:
+                self._switch_to_chat()
+                await self.query_one("#messages", Vertical).mount(ChatMessage("user", message))
+                self._set_processing_state(True)
+                if first_message:
+                    self.query_one("#chat-container", VerticalScroll).anchor()
+                    first_message = False
+                completed = await self._process_chat(message)
+                if completed is False or self._cancel_requested or not self._queued_messages:
+                    break
+                message = self._queued_messages.pop(0)
+        except asyncio.CancelledError:
+            if self.query("#messages"):
+                await self.query_one("#messages", Vertical).mount(
+                    Static("• Interrupted · send a message to continue", classes="run-outcome", markup=False)
+                )
+            raise
+        finally:
+            self._chat_worker = None
+            self._set_processing_state(False)
+            if self.query("#chat-message-input"):
+                self._get_active_input().focus()
 
     async def _process_chat(self, message: str):
         """Process chat in background worker"""
-        import time
-        start_time = time.time()
         
         messages_container = self.query_one("#messages", Vertical)
-        chat_container = self.query_one("#chat-container", VerticalScroll)
         chat_input = self.query_one("#chat-message-input", Input)
         
         try:
@@ -946,8 +669,7 @@ class CodesmApp(App):
             logger.info(f"Using model: {self.model}")
 
             response_text = ""
-            tool_widgets: dict[str, ToolCallWidget] = {}
-            tools_used: list[str] = []
+            rendered_text = False
             
             # Track current action group for Amp-style tree display
             current_action: str | None = None
@@ -957,260 +679,171 @@ class CodesmApp(App):
             # Track thinking and subagent widgets
             thinking_tree_widget: ThinkingTreeWidget | None = None
             thinking_timer = None
-            oracle_widgets: dict[str, OracleTreeWidget] = {}  # subagent_id -> widget
+            agent_timers = []
             subagent_widgets: dict[str, SubAgentTreeWidget] = {}  # subagent_id -> widget
             
             # Streaming text widget for live response display
             streaming_widget: StreamingTextWidget | None = None
-            cursor_timer = None
 
             chunk_count = 0
             last_chunk_time = time.time()
-            async for chunk in self.agent.chat(message):
-                chunk_count += 1
-                now = time.time()
-                delta = now - last_chunk_time
-                last_chunk_time = now
+            async with aclosing(self.agent.chat(message)) as stream:
+                async for chunk in stream:
+                    chunk_count += 1
+                    now = time.time()
+                    delta = now - last_chunk_time
+                    last_chunk_time = now
                 
-                # Check if cancel was requested
-                if self._cancel_requested:
-                    logger.info("Chat cancelled by user")
-                    break
+                    # Check if cancel was requested
+                    if self._cancel_requested:
+                        logger.info("Chat cancelled by user")
+                        break
                     
-                if hasattr(chunk, 'type'):
-                    if chunk.type == "text":
-                        response_text += chunk.content
-                        logger.info(f"[STREAM] chunk #{chunk_count} after {delta:.3f}s: {chunk.content[:30] if chunk.content else 'empty'}...")
+                    if hasattr(chunk, 'type'):
+                        if chunk.type == "text":
+                            response_text += chunk.content
+                            logger.info(f"[STREAM] chunk #{chunk_count} after {delta:.3f}s: {chunk.content[:30] if chunk.content else 'empty'}...")
                         
-                        # Create new streaming widget or append to existing one
-                        if streaming_widget is None and chunk.content:
-                            # Create new streaming widget (first text or after tool call)
-                            streaming_widget = StreamingTextWidget()
-                            streaming_widget.id = f"streaming-response-{uuid.uuid4().hex[:8]}"
-                            streaming_widget.set_content(chunk.content)
-                            await messages_container.mount(streaming_widget)
-                            cursor_timer = self.set_interval(0.5, lambda: self._blink_cursor(streaming_widget))
-                            chat_container.scroll_end(animate=False)
-                        elif streaming_widget and chunk.content:
-                            # Append text to existing streaming widget
-                            streaming_widget.append_text(chunk.content)
-                            chat_container.scroll_end(animate=False)
-                        
-                        # Force refresh and yield to event loop
-                        if chunk.content:
-                            self.refresh(layout=True)
-                            await asyncio.sleep(0.01)  # Small delay to ensure TUI processes refresh
-                    elif chunk.type == "tool_call":
-                        # Finalize current streaming widget so tool call appears after it
-                        if streaming_widget is not None and streaming_widget.parent is not None:
-                            streaming_widget.mark_complete()
-                            streaming_widget = None  # Create new one for text after tool call
-                        
-                        logger.debug(f"Tool call: {chunk.name} with args {chunk.args}")
-                        
-                        # Determine action category for grouping
-                        action_category = self._get_tool_category(chunk.name)
-                        
-                        # Create new ToolTreeWidget if category changed
-                        if action_category != current_action:
-                            current_action = action_category
-                            
-                            # Create Amp-style grouped tree widget
-                            current_tree_widget = ToolTreeWidget(action_category)
-                            await messages_container.mount(current_tree_widget)
-                        
-                        # Add tool to current tree group
-                        if current_tree_widget is not None:
-                            tool_index = current_tree_widget.add_tool(
-                                chunk.name,
-                                chunk.args if isinstance(chunk.args, dict) else {},
-                                pending=True
-                            )
-                            tool_index_map[chunk.id] = (current_tree_widget, tool_index)
-                        
-                        # Update thinking message based on tool
-                        tool_messages = {
-                            "read": "Reading files",
-                            "write": "Writing code",
-                            "edit": "Editing code",
-                            "bash": "Running command",
-                            "grep": "Searching codebase",
-                            "glob": "Finding files",
-                            "webfetch": "Fetching from web",
-                            "websearch": "Searching the web",
-                            "codesearch": "Semantic code search",
-                        }
-                        if hasattr(self, '_thinking_widget') and self._thinking_widget:
-                            msg = tool_messages.get(chunk.name, f"Using {chunk.name}")
-                            self._thinking_widget.set_message(msg)
-                        
-                        if chunk.name not in tools_used:
-                            tools_used.append(chunk.name)
-                        chat_container.scroll_end(animate=False)
-                    elif chunk.type == "tool_result":
-                        logger.debug(f"Tool result for {chunk.name}: {chunk.content[:50] if chunk.content else 'empty'}...")
-                        
-                        # Generate result summary for inline display
-                        result_summary = self._get_result_summary(chunk.name, chunk.content)
-                        
-                        # Track files in context for breadcrumbs
-                        if chunk.name == "read":
-                            # Extract file path from args if available
+                            # Create new streaming widget or append to existing one
+                            if streaming_widget is None and chunk.content:
+                                # Create new streaming widget (first text or after tool call)
+                                current_action = current_tree_widget = None
+                                rendered_text = True
+                                streaming_widget = StreamingTextWidget()
+                                streaming_widget.id = f"streaming-response-{uuid.uuid4().hex[:8]}"
+                                streaming_widget.set_content(chunk.content)
+                                await messages_container.mount(streaming_widget)
+                            elif streaming_widget and chunk.content:
+                                # Append text to existing streaming widget
+                                streaming_widget.append_text(chunk.content)
+
+                        elif chunk.type == "tool_call":
+                            # Finalize current streaming widget so tool call appears after it
+                            if streaming_widget is not None and streaming_widget.parent is not None:
+                                streaming_widget.mark_complete()
+                                streaming_widget = None  # Create new one for text after tool call
+
+                            logger.debug(f"Tool call: {chunk.name} with args {chunk.args}")
+
+                            # Determine action category for grouping
+                            action_category = self._get_tool_category(chunk.name)
+
+                            # Create new ToolTreeWidget if category changed
+                            if action_category != current_action:
+                                current_action = action_category
+
+                                # Create Amp-style grouped tree widget
+                                current_tree_widget = ToolTreeWidget(action_category, collapsed=not self._transcript_expanded)
+                                await messages_container.mount(current_tree_widget)
+
+                            # Add tool to current tree group
+                            if current_tree_widget is not None:
+                                tool_index = current_tree_widget.add_tool(
+                                    chunk.name,
+                                    chunk.args if isinstance(chunk.args, dict) else {},
+                                    pending=True
+                                )
+                                tool_index_map[chunk.id] = (current_tree_widget, tool_index)
+
+                        elif chunk.type == "tool_result":
+                            logger.debug(f"Tool result for {chunk.name}: {chunk.content[:50] if chunk.content else 'empty'}...")
+
+                            # Generate result summary for inline display
+                            result_summary = self._get_result_summary(chunk.name, chunk.content)
+
+                            diff_preview = chunk.content if chunk.name in {"edit", "write", "multiedit"} else ""
+
+                            # Update tree widget if using grouped display
                             if chunk.id in tool_index_map:
                                 tree_widget, tool_idx = tool_index_map[chunk.id]
-                                if tool_idx < len(tree_widget._tools):
-                                    _, args, _, _, _, _ = tree_widget._tools[tool_idx]
-                                    path = args.get("path", args.get("file_path", ""))
-                                    if path:
-                                        self._update_context_breadcrumbs(path)
-                        
-                        # Extract diff preview for edit/write operations
-                        diff_preview = ""
-                        streaming_text = ""
-                        if chunk.name in ["edit", "write"]:
-                            diff_preview = self._extract_diff(chunk.content)
-                        elif chunk.name == "bash":
-                            # Show bash output inline (first 200 chars)
-                            streaming_text = chunk.content[:200] if chunk.content else ""
-                        
-                        # Update tree widget if using grouped display
-                        if chunk.id in tool_index_map:
-                            tree_widget, tool_idx = tool_index_map[chunk.id]
-                            tree_widget.mark_tool_complete(
-                                tool_idx, 
-                                result_summary,
-                                streaming_text=streaming_text,
-                                diff_preview=diff_preview
-                            )
-                        elif chunk.id in tool_widgets:
-                            # Fallback for legacy individual widgets
-                            tool_widgets[chunk.id].mark_completed(result_summary=result_summary)
+                                tree_widget.mark_tool_complete(
+                                    tool_idx,
+                                    result_summary,
+                                    streaming_text=chunk.content or "",
+                                    diff_preview=diff_preview,
+                                    is_error=chunk.content.startswith("Error:")
+                                )
+                            if chunk.name == "todo":
+                                # Parse todo list from result and display nicely
+                                todos = self._parse_todo_result(chunk.content)
+                                if todos:
+                                    todo_widget = TodoListWidget(todos)
+                                    await messages_container.mount(todo_widget)
+                        elif chunk.type == "handoff":
+                            # Handle handoff to new session
+                            logger.info(f"Handoff triggered to session: {chunk.new_session_id}")
+                            self._pending_handoff_session = chunk.new_session_id
 
-                        # Only show full result for mermaid/diagram (edit/write/bash now inline in tree)
-                        if chunk.name in ["mcp_execute", "mermaid", "diagram"]:
-                            from .chat import styled_markdown
-                            result_msg = Static(styled_markdown(chunk.content))
-                            result_msg.styles.padding = (0, 2, 1, 4)
-                            result_msg.styles.margin = (0, 0, 1, 0)
-                            await messages_container.mount(result_msg)
-                            chat_container.scroll_end(animate=False)
-                        elif chunk.name == "todo":
-                            # Parse todo list from result and display nicely
-                            todos = self._parse_todo_result(chunk.content)
-                            if todos:
-                                todo_widget = TodoListWidget(todos)
-                                await messages_container.mount(todo_widget)
-                                chat_container.scroll_end(animate=False)
-                    elif chunk.type == "handoff":
-                        # Handle handoff to new session
-                        logger.info(f"Handoff triggered to session: {chunk.new_session_id}")
-                        self._pending_handoff_session = chunk.new_session_id
-                    
-                    elif chunk.type == "thinking":
-                        # Start or update thinking display
-                        if thinking_tree_widget is None:
-                            thinking_tree_widget = ThinkingTreeWidget(chunk.content or "Thinking")
-                            await messages_container.mount(thinking_tree_widget)
-                            # Start spinner animation
-                            thinking_timer = self.set_interval(0.1, lambda: thinking_tree_widget.next_frame() if thinking_tree_widget else None)
-                        else:
-                            thinking_tree_widget.set_message(chunk.content or "Thinking")
-                        chat_container.scroll_end(animate=False)
-                    
-                    elif chunk.type == "thinking_done":
-                        # Complete thinking with summary
-                        if thinking_tree_widget:
-                            thinking_tree_widget.complete(chunk.thinking_summary)
-                            if thinking_timer:
-                                thinking_timer.stop()
-                                thinking_timer = None
-                        chat_container.scroll_end(animate=False)
-                    
-                    elif chunk.type == "subagent_start":
-                        # Start subagent display
-                        subagent_id = chunk.subagent_id or f"subagent-{uuid.uuid4().hex[:8]}"
-                        subagent_type = chunk.subagent_type or "coder"
+                        elif chunk.type == "thinking":
+                            # Start or update thinking display
+                            if thinking_tree_widget is None or thinking_tree_widget._complete:
+                                thinking_tree_widget = ThinkingTreeWidget(chunk.content or "Thinking")
+                                thinking_tree_widget._collapsed = not self._transcript_expanded
+                                await messages_container.mount(thinking_tree_widget)
+                                # Start spinner animation
+                                thinking_timer = self.set_interval(0.1, lambda: thinking_tree_widget.next_frame() if thinking_tree_widget else None)
+                            else:
+                                thinking_tree_widget.set_message(chunk.content or "Thinking")
                         
-                        if subagent_type == "oracle":
-                            # Use special Oracle widget
-                            oracle_widget = OracleTreeWidget(
-                                title="Oracle",
-                                subagent_type=subagent_type
-                            )
-                            oracle_widgets[subagent_id] = oracle_widget
-                            await messages_container.mount(oracle_widget)
-                            # Start spinner animation
-                            self.set_interval(0.1, lambda w=oracle_widget: w.next_frame() if not w._complete else None)
-                        else:
-                            # Use general subagent widget
-                            subagent_widget = SubAgentTreeWidget(
-                                description=chunk.content or "Processing task",
-                                subagent_type=subagent_type
-                            )
-                            subagent_widgets[subagent_id] = subagent_widget
-                            await messages_container.mount(subagent_widget)
-                            # Start spinner animation
-                            self.set_interval(0.1, lambda w=subagent_widget: w.next_frame() if not w._complete else None)
+                        elif chunk.type == "thinking_done":
+                            # Complete thinking with summary
+                            if thinking_tree_widget:
+                                thinking_tree_widget.complete(chunk.thinking_summary)
+                                if thinking_timer:
+                                    thinking_timer.stop()
+                                    thinking_timer = None
                         
-                        chat_container.scroll_end(animate=False)
-                    
-                    elif chunk.type == "subagent_done":
-                        # Complete subagent display
-                        subagent_id = chunk.subagent_id or ""
+                        elif chunk.type == "subagent_start":
+                            current_action = current_tree_widget = None
+                            widget = SubAgentTreeWidget(chunk.content,
+                                subagent_type=chunk.subagent_type,
+                                model=chunk.metadata.get("model", ""))
+                            widget._collapsed = not self._transcript_expanded
+                            subagent_widgets[chunk.subagent_id] = widget
+                            await messages_container.mount(widget)
+                            agent_timers.append(self.set_interval(0.1, widget.next_frame))
+                        elif chunk.type == "subagent_progress":
+                            widget = subagent_widgets.get(chunk.subagent_id)
+                            if widget:
+                                widget.update_status(chunk.metadata.get("status", "running"))
+                                if chunk.metadata.get("tool"):
+                                    widget.add_action(chunk.metadata["tool"], chunk.content, complete=True)
+                        elif chunk.type == "subagent_done":
+                            widget = subagent_widgets.get(chunk.subagent_id)
+                            if widget:
+                                widget.complete(chunk.content, status=chunk.metadata.get("status", "completed"),
+                                                cost=chunk.metadata.get("cost"))
+                        elif chunk.type == "usage":
+                            self._update_context_info("", "")
+                            widget = subagent_widgets.get(chunk.subagent_id)
+                            if widget and chunk.metadata.get("cost_known"):
+                                widget.update_status(widget.status, (widget.cost or 0) + chunk.metadata["cost"])
+                        elif chunk.type == "run_status":
+                            if chunk.content != "completed":
+                                classes = "run-outcome verified" if chunk.content == "verified" else "run-outcome"
+                                await messages_container.mount(Static(f"• {chunk.content.capitalize()}", classes=classes, markup=False))
                         
-                        if subagent_id in oracle_widgets:
-                            oracle_widgets[subagent_id].parse_and_complete(chunk.content)
-                        elif subagent_id in subagent_widgets:
-                            # Extract a summary from the result
-                            summary = chunk.content[:100] + "..." if len(chunk.content) > 100 else chunk.content
-                            subagent_widgets[subagent_id].complete(summary)
-                        
-                        chat_container.scroll_end(animate=False)
-                    
-                else:
-                    response_text += str(chunk)
+                    else:
+                        response_text += str(chunk)
 
-            duration = time.time() - start_time
             
             # Stop thinking timer if still running
             if thinking_timer:
                 thinking_timer.stop()
 
-            # Stop cursor blink timer
-            if cursor_timer:
-                cursor_timer.stop()
             
             # Finalize streaming widget
             if streaming_widget and streaming_widget.parent is not None:
                 streaming_widget.mark_complete()
             
             if response_text:
-                logger.info(f"Got response, length: {len(response_text)}")
-                
-                # Update sidebar with token/cost estimates and session title
+                if not rendered_text:
+                    await messages_container.mount(ChatMessage("assistant", response_text))
                 self._update_context_info(message, response_text)
-                self._update_sidebar_title()
-            elif response_text:
-                # Fallback: create static message if streaming widget wasn't used
-                logger.info(f"Got response, length: {len(response_text)}")
-                assistant_msg = ChatMessage("assistant", response_text, tools_used=tools_used)
-                await messages_container.mount(assistant_msg)
-                
-                self._update_context_info(message, response_text)
-                self._update_sidebar_title()
-            elif not self._cancel_requested:
-                logger.warning("No response received")
-                error_msg = ChatMessage("assistant", "No response received")
-                await messages_container.mount(error_msg)
-
-            # Scroll to bottom
-            chat_container.scroll_end(animate=False)
+            elif not self._cancel_requested and not tool_index_map and not subagent_widgets:
+                await messages_container.mount(ChatMessage("assistant", "No response received"))
 
             logger.info(f"Messages container now has {len(messages_container.children)} children")
-            
-            # Run code review if files were edited
-            if tools_used and any(t in tools_used for t in ["edit", "write", "multiedit"]):
-                await self._run_code_review(messages_container, chat_container)
             
             # Handle pending handoff - switch to new session
             if hasattr(self, "_pending_handoff_session") and self._pending_handoff_session:
@@ -1230,328 +863,146 @@ class CodesmApp(App):
                 hint = ChatMessage("assistant", "Try running /connect to set up your API key")
                 await messages_container.mount(hint)
 
-            self.notify(f"Error: {error_msg[:80]}")
+            return False  # Pause queued work after a failed request.
 
         finally:
+            for timer in agent_timers + [thinking_timer]:
+                if timer:
+                    timer.stop()
+            for widget in subagent_widgets.values():
+                if not widget._complete:
+                    widget.complete("Execution interrupted", status="cancelled" if self._cancel_requested else "failed")
+            if streaming_widget:
+                streaming_widget.mark_complete()
+            if thinking_tree_widget and not thinking_tree_widget._complete:
+                thinking_tree_widget.complete()
+            self._update_context_info("", "")
             # Re-enable input and reset status
             self._set_processing_state(False)
             chat_input.disabled = False
-            chat_input.focus()
-            self._chat_worker = None
+            if chat_input.is_mounted:
+                chat_input.focus()
 
     def _set_processing_state(self, processing: bool, message: str = ""):
-        """Update UI to show processing state with animated thinking indicator"""
-        try:
-            status_text = self.query_one("#chat-status-text", Static)
-            hints = self.query_one("#chat-hints", Static)
-            
-            if processing:
-                # Start animated thinking indicator
-                self._thinking_widget = ThinkingWidget(message or "Thinking")
-                self._thinking_widget.id = "thinking-indicator"
-                
-                # Mount thinking widget in messages area
-                messages_container = self.query_one("#messages", Vertical)
-                messages_container.mount(self._thinking_widget)
-                
-                # Start spinner animation timer
-                self._spinner_timer = self.set_interval(0.08, self._animate_spinner)
-                # Start message cycling timer (every 3 seconds)
-                self._message_timer = self.set_interval(3.0, self._cycle_thinking_message)
-                
-                hints.update("[dim]esc[/dim] to interrupt")
-                status_text.update("")
-            else:
-                # Stop timers and remove thinking widget
-                if hasattr(self, '_spinner_timer') and self._spinner_timer:
-                    self._spinner_timer.stop()
-                    self._spinner_timer = None
-                if hasattr(self, '_message_timer') and self._message_timer:
-                    self._message_timer.stop()
-                    self._message_timer = None
-                
-                # Remove thinking widget if exists
-                try:
-                    thinking = self.query_one("#thinking-indicator")
-                    thinking.remove()
-                except Exception:
-                    pass
-                
-                status_text.update("")
-                hints.update("[dim]tab[/dim] switch mode  [dim]ctrl+p[/dim] commands")
-        except Exception:
-            pass
+        self._processing = processing
+        if self._spinner_timer:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        if processing:
+            self._work_started = time.monotonic()
+            self._spinner_frame = 0
+            self._spinner_timer = self.set_interval(0.1, self._animate_spinner)
+        self._animate_spinner()
+        self._update_footer()
 
     def _animate_spinner(self):
-        """Animate the thinking spinner"""
-        try:
-            if hasattr(self, '_thinking_widget') and self._thinking_widget:
-                self._thinking_widget.next_frame()
-                # Scroll to keep thinking widget visible
-                chat_container = self.query_one("#chat-container", VerticalScroll)
-                chat_container.scroll_end(animate=False)
-        except Exception:
-            pass
+        if not self.query("#chat-status-text"):
+            return
+        status = self.query_one("#chat-status-text", Static)
+        queued = f" · {len(self._queued_messages)} queued" if self._queued_messages else ""
+        status.set_class(not self._processing and not queued, "hidden")
+        if self._processing:
+            seconds = int(time.monotonic() - self._work_started)
+            elapsed = f"{seconds // 60}m {seconds % 60:02d}s" if seconds >= 60 else f"{seconds}s"
+            frame = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[self._spinner_frame % 10]
+            self._spinner_frame += 1
+            status.update(f"{frame} Working ({elapsed} · esc to interrupt){queued}")
+        else:
+            status.update(f"{len(self._queued_messages)} queued · send a message to continue · esc to discard" if queued else "")
 
-    def _blink_cursor(self, widget: StreamingTextWidget):
-        """Toggle cursor visibility for streaming widget."""
-        try:
-            if widget:
-                widget.toggle_cursor()
-        except Exception:
-            pass
+    def _update_context_info(self, user_msg: str = "", assistant_msg: str = ""):
+        """Keep usage in /cost and a transcript occupancy estimate in the footer."""
+        from codesm.session.context import TokenEstimator
+        stats = self.agent.budget.get_session_stats()
+        self._total_tokens = stats.total_input_tokens + stats.total_output_tokens
+        self._total_cost = stats.total_cost
+        window = self.agent.profile.context_tokens if self.agent.profile else 128000
+        tokens = TokenEstimator().estimate_messages(self.agent.session.get_messages())
+        self._context_left = max(0, 100 - int(tokens / window * 100))
+        self._update_footer()
 
-    async def _run_code_review(self, messages_container, chat_container):
-        """Run code review on files edited during the session."""
-        try:
-            from codesm.review import CodeReviewer
-            
-            # Check if we have an OpenRouter API key
-            import os
-            api_key = os.environ.get("OPENROUTER_API_KEY")
-            if not api_key:
-                logger.debug("Skipping code review: no OPENROUTER_API_KEY set")
-                return
-            
-            # Show review indicator
-            review_indicator = ThinkingWidget("Reviewing code changes...")
-            review_indicator.id = "review-indicator"
-            await messages_container.mount(review_indicator)
-            chat_container.scroll_end(animate=False)
-            
-            # Start spinner animation
-            review_timer = self.set_interval(0.08, lambda: self._animate_review(review_indicator))
-            
-            try:
-                reviewer = CodeReviewer(api_key=api_key)
-                result = await reviewer.review_session_changes(self.agent.session)
-                
-                # Stop timer and remove indicator
-                review_timer.stop()
-                await review_indicator.remove()
-                
-                # Show review results
-                if result.issues or result.files_reviewed:
-                    review_widget = CodeReviewWidget(result)
-                    await messages_container.mount(review_widget)
-                    chat_container.scroll_end(animate=False)
-                    
-                    # If critical issues, notify user
-                    if result.has_critical:
-                        self.notify("Code review found critical issues!", severity="warning")
-                    elif result.has_warnings:
-                        self.notify("Code review found some warnings", severity="information")
-            except Exception as e:
-                review_timer.stop()
-                await review_indicator.remove()
-                logger.error(f"Code review failed: {e}")
-                
-        except ImportError as e:
-            logger.debug(f"Code review not available: {e}")
-        except Exception as e:
-            logger.error(f"Code review error: {e}")
+    def _update_footer(self):
+        if not self.query("#footer-hints"):
+            return
+        hints = "tab to queue message" if self._processing else "ctrl+p commands · ctrl+t transcript"
+        if self.size.width < 65 and not self._processing:
+            hints = "ctrl+p commands"
+        if self.screen.get_selected_text():
+            hints = "ctrl+c copy · esc clear selection"
+        elif self._mouse_pointer == "text":
+            hints = "drag to select · ctrl+c copy"
+        model = self._short_model_name()
+        context = f"~{self._context_left}% context left"
+        model_budget = max(0, self.size.width // 2 - len(context) - 3)
+        if model_budget >= 8:
+            if len(model) > model_budget:
+                model = model[:model_budget - 1] + "…"
+            context = f"{model} · {context}"
+        self.query_one("#footer-hints", Static).update(hints)
+        self.query_one("#footer-context", Static).update(context)
 
-    def _animate_review(self, widget):
-        """Animate the review indicator."""
-        try:
-            if widget:
-                widget.next_frame()
-        except Exception:
-            pass
+    def on_resize(self):
+        if self.is_mounted:
+            self._update_footer()
 
-    def _cycle_thinking_message(self):
-        """Cycle through interesting thinking messages"""
-        try:
-            if hasattr(self, '_thinking_widget') and self._thinking_widget:
-                self._thinking_widget.cycle_message()
-        except Exception:
-            pass
-
-    def _update_sidebar_title(self):
-        """Update sidebar with current session title"""
-        try:
-            if self.agent and self.agent.session:
-                sidebar = self.query_one("#context-sidebar", ContextSidebar)
-                sidebar.update_title(self.agent.session.title)
-        except Exception:
-            pass
-
-    def _update_context_info(self, user_msg: str, assistant_msg: str):
-        """Update sidebar with token and cost estimates"""
-        # Rough token estimation (4 chars per token)
-        user_tokens = len(user_msg) // 4
-        assistant_tokens = len(assistant_msg) // 4
-        self._total_tokens += user_tokens + assistant_tokens
-        
-        # Rough cost estimation
-        input_cost = user_tokens * 0.000003  # $3 per 1M tokens
-        output_cost = assistant_tokens * 0.000015  # $15 per 1M tokens
-        self._total_cost += input_cost + output_cost
-        
-        # Context percentage (assuming 128k context window)
-        context_pct = min(int((self._total_tokens / 128000) * 100), 100)
-        
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            sidebar.update_context(self._total_tokens, context_pct, self._total_cost)
-        except Exception:
-            pass
-
-    def _display_session_messages(self, messages: list[dict]):
-        """Display loaded session messages in the chat area"""
-        from .chat import styled_markdown
-        
+    async def _display_session_messages(self, messages: list[dict]):
         messages_container = self.query_one("#messages", Vertical)
-        chat_container = self.query_one("#chat-container", VerticalScroll)
-        
-        # Add previous messages
+        await messages_container.remove_children()
         for msg in messages:
-            role = msg.get("role")
-            content = msg.get("content", "")
-            
+            role, content = msg.get("role"), msg.get("content", "")
             if not role or not content:
                 continue
-            
             if role == "tool_display":
-                # Render tool results with styled markdown (for diffs, etc.)
-                result_widget = Static(styled_markdown(content))
-                result_widget.styles.padding = (0, 2, 1, 4)
-                result_widget.styles.margin = (0, 0, 1, 0)
-                messages_container.mount(result_widget)
+                name = msg.get("tool_name", "tool")
+                widget = ToolTreeWidget(self._get_tool_category(name), collapsed=not self._transcript_expanded)
+                index = widget.add_tool(name, {}, pending=False)
+                widget.mark_tool_complete(index, self._get_result_summary(name, content),
+                                          streaming_text=content, is_error=content.startswith("Error:"))
             else:
-                msg_widget = ChatMessage(role, content)
-                messages_container.mount(msg_widget)
-        
-        if messages:
-            chat_container.scroll_end(animate=False)
-        
-        logger.info(f"Displayed {len(messages)} previous messages")
+                widget = ChatMessage(role, content)
+            await messages_container.mount(widget)
+        for record in self.agent.session.agent_runs.values():
+            widget = SubAgentTreeWidget(record.get("task", "Task"),
+                subagent_type=record.get("role", "coder"), model=record.get("model", ""))
+            widget.complete(record.get("result", ""), status=record.get("status", "interrupted"), cost=record.get("cost"))
+            widget._collapsed = not self._transcript_expanded
+            await messages_container.mount(widget)
+        self.agent._restore_budget()
+        self._update_context_info()
+        self.query_one("#chat-container", VerticalScroll).anchor()
 
     def _switch_to_chat(self, show_session_start: bool = True):
-        """Switch from welcome view to chat view"""
         self.in_chat = True
         self.query_one("#welcome-view").add_class("hidden")
-        self.query_one("#chat-view").remove_class("hidden")
-        
-        # Show sidebar in chat view
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            sidebar.remove_class("hidden")
-            self._sidebar_visible = True
-        except Exception:
-            pass
-
-        logger.info(f"Switched to chat view, messages container has {len(self.query_one('#messages', Vertical).children)} children")
-
-        self.query_one("#chat-message-input", Input).focus()
+        self.query_one("#messages").add_class("active")
+        self._get_active_input().focus()
 
     def _switch_to_welcome(self):
-        """Switch from chat view to welcome view"""
         self.in_chat = False
         self.query_one("#welcome-view").remove_class("hidden")
-        self.query_one("#chat-view").add_class("hidden")
-        
-        # Hide sidebar in welcome view
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            sidebar.add_class("hidden")
-            self._sidebar_visible = False
-        except Exception:
-            pass
-        
-        self.query_one("#message-input", Input).focus()
+        self.query_one("#messages").remove_class("active")
+        self._get_active_input().focus()
 
     async def _show_model_selector(self):
         """Show model selection modal"""
-        result = await self.push_screen_wait(ModelSelectModal(self.model))
-        if result:
-            self.model = result
-            self._update_model_display()
-            if self.agent:
-                self.agent.model = result
+        self.push_screen(ModelSelectModal(self.model, self._get_model_config()), self._on_model_selected)
 
     def _update_model_display(self):
-        """Update model display in UI"""
-        mode_display = self._get_mode_display()
-        
-        # Show the actual model being used (important for rush mode)
-        actual_model = self.model.split("/")[-1] if "/" in self.model else self.model
-        display_text = f"{mode_display} · {actual_model}"
-
-        # Update welcome screen
-        self.query_one("#model-indicator", Static).update(f"{mode_display}  {actual_model}")
-        
-        # Update custom footer
-        try:
-            self.query_one("#footer-mode-model", Static).update(display_text)
-        except Exception:
-            pass
+        self.query_one("#model-indicator", Static).update(f"{self._get_mode_display()} · {self.model}")
+        self._update_footer()
 
     def _get_tool_category(self, tool_name: str) -> str:
-        """Get the action category for a tool (for grouping in tree display)."""
-        for category, tools in TOOL_CATEGORIES.items():
-            if tool_name in tools:
-                return category.title()
-        
-        # Default categories based on common patterns
-        if tool_name in ["grep", "glob", "codesearch", "websearch"]:
-            return "Search"
-        elif tool_name in ["read", "write", "edit", "multiedit", "ls"]:
-            return "Files"
-        elif tool_name in ["bash"]:
-            return "Command"
-        elif tool_name in ["web", "webfetch"]:
-            return "Web"
-        elif tool_name in ["todo"]:
-            return "Tasks"
-        else:
-            return "Action"
-    
-    def _update_context_breadcrumbs(self, path: str):
-        """Add a file to the context breadcrumbs display."""
-        try:
-            breadcrumbs = self.query_one("#context-breadcrumbs", ContextBreadcrumbs)
-            breadcrumbs.add_file(path)
-        except Exception:
-            pass
-    
-    def _extract_diff(self, content: str) -> str:
-        """Extract diff content from edit/write tool result."""
-        if not content:
-            return ""
-        
-        # Look for diff markers
-        lines = content.split("\n")
-        diff_lines = []
-        in_diff = False
-        
-        for line in lines:
-            # Start of diff
-            if line.startswith("```diff") or line.startswith("---") or line.startswith("@@"):
-                in_diff = True
-            
-            # Capture diff lines
-            if in_diff:
-                if line.startswith("```") and not line.startswith("```diff"):
-                    in_diff = False
-                    continue
-                if line.startswith("+") or line.startswith("-") or line.startswith("@@"):
-                    diff_lines.append(line)
-                elif line.startswith(" "):  # Context line
-                    diff_lines.append(line)
-        
-        # If we found diff lines, return them
-        if diff_lines:
-            return "\n".join(diff_lines[:20])  # Limit to 20 lines
-        
-        # Fallback: look for +/- lines anywhere
-        for line in lines:
-            if line.startswith("+") and not line.startswith("+++"):
-                diff_lines.append(line)
-            elif line.startswith("-") and not line.startswith("---"):
-                diff_lines.append(line)
-        
-        return "\n".join(diff_lines[:20]) if diff_lines else ""
+        if tool_name in {"read", "ls", "grep", "glob", "codesearch", "look_at"}:
+            return "Explored"
+        if tool_name in {"write", "edit", "multiedit"}:
+            return "Edited"
+        if tool_name == "bash":
+            return "Ran"
+        if tool_name in {"web", "webfetch", "websearch"}:
+            return "Searched the web"
+        if tool_name == "todo":
+            return "Updated tasks"
+        return "Used tools"
 
     def _get_result_summary(self, tool_name: str, content: str) -> str:
         """Generate a compact summary for tool results."""
@@ -1563,21 +1014,21 @@ class CodesmApp(App):
         if tool_name == "glob":
             # Count files found
             if content == "No files found":
-                return "(no files)"
+                return "no files"
             count = len([l for l in lines if l.strip()])
-            return f"({count} files)"
+            return f"{count} file" + ("s" if count != 1 else "")
         
         elif tool_name == "grep":
             # Count matches
             if "No matches" in content or not lines:
-                return "(no matches)"
+                return "no matches"
             count = len([l for l in lines if l.strip() and not l.startswith("Results")])
-            return f"({count} matches)"
+            return f"{count} match" + ("es" if count != 1 else "")
         
         elif tool_name == "read":
             # Show line count
             count = len(lines)
-            return f"({count} lines)"
+            return f"{count} line" + ("s" if count != 1 else "")
         
         elif tool_name in ["edit", "write"]:
             return ""  # Full result shown separately
@@ -1586,7 +1037,7 @@ class CodesmApp(App):
             # Show exit code if available, or line count
             if "exit code" in content.lower():
                 return ""
-            return f"({len(lines)} lines)"
+            return f"{len(lines)} line" + ("s" if len(lines) != 1 else "")
         
         elif tool_name == "codesearch":
             return ""  # Complex results
@@ -1623,169 +1074,116 @@ class CodesmApp(App):
 
     def action_cancel_chat(self):
         """Cancel the current chat processing"""
+        if self.screen.get_selected_text():
+            self.screen.clear_selection()
+            self._update_footer()
+            return
         if self._chat_worker and self._chat_worker.is_running:
             self._cancel_requested = True
-            self.notify("Cancelling...")
+            self._chat_worker.cancel()
             logger.info("Cancel requested by user")
+        elif self._queued_messages:
+            self._queued_messages.clear()
+            self._animate_spinner()
+            self._update_footer()
+
+    def _selected_text(self) -> str | None:
+        if isinstance(self.focused, Input) and self.focused.selected_text:
+            return self.focused.selected_text
+        return self.screen.get_selected_text()
+
+    def action_copy_selection(self):
+        if text := self._selected_text():
+            copy_text(self, text)
+
+    def action_copy_or_cancel(self):
+        if self._selected_text():
+            self.action_copy_selection()
+        else:
+            self.action_cancel_or_quit()
+
+    def on_text_selected(self):
+        self._update_footer()
+
+    def _set_mouse_pointer(self, shape: str):
+        if shape == self._mouse_pointer:
+            return
+        self._mouse_pointer = shape
+        self._update_footer()
+        driver = self._driver
+        if driver and not driver.is_headless and not driver.is_web:
+            # OSC 22: supported terminals show an I-beam over selectable text.
+            # https://sw.kovidgoyal.net/kitty/pointer-shapes/
+            driver.write(f"\x1b]22;{shape}\x1b\\")
+
+    def on_mouse_move(self, event: events.MouseMove):
+        widget = self.mouse_over
+        shape = ""
+        if event.style.link:
+            shape = "pointer"
+        elif widget and (widget.allow_select or isinstance(widget, Input)):
+            shape = "text"
+        self._set_mouse_pointer(shape)
 
     def action_cancel_or_quit(self):
         """Cancel chat if running, otherwise quit"""
         if self._chat_worker and self._chat_worker.is_running:
+            self.screen.clear_selection()
             self.action_cancel_chat()
         else:
             self.exit()
 
-    def action_toggle_theme(self):
-        """Toggle between themes"""
-        self._theme_name = get_next_theme(self._theme_name)
-        self.theme = f"codesm-{self._theme_name}"
-        
-        # Save theme preference
-        from codesm.auth.credentials import CredentialStore
-        store = CredentialStore()
-        store.set_preferred_theme(self._theme_name)
-        
-        self.notify(f"Theme: {self._theme_name}")
-
-    def action_toggle_sidebar(self):
-        """Toggle sidebar visibility"""
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            self._sidebar_visible = not self._sidebar_visible
-            if self._sidebar_visible:
-                sidebar.remove_class("hidden")
-            else:
-                sidebar.add_class("hidden")
-        except Exception:
-            pass
-
-    def action_collapse_all(self):
-        """Collapse all tree widgets in the chat"""
-        collapsed_count = 0
-        try:
-            # Collapse all ToolTreeWidgets
-            for widget in self.query(ToolTreeWidget):
-                if not widget._collapsed:
-                    widget._collapsed = True
-                    widget.refresh()
-                    collapsed_count += 1
-            
-            # Collapse all ThinkingTreeWidgets
-            for widget in self.query(ThinkingTreeWidget):
-                if widget._complete and not widget._collapsed:
-                    widget._collapsed = True
-                    widget.refresh()
-                    collapsed_count += 1
-            
-            # Collapse all OracleTreeWidgets
-            for widget in self.query(OracleTreeWidget):
-                if widget._complete and not widget._collapsed:
-                    widget._collapsed = True
-                    widget.refresh()
-                    collapsed_count += 1
-            
-            # Collapse all SubAgentTreeWidgets
-            for widget in self.query(SubAgentTreeWidget):
-                if widget._complete and not widget._collapsed:
-                    widget._collapsed = True
-                    widget.refresh()
-                    collapsed_count += 1
-            
-            if collapsed_count:
-                self.notify(f"Collapsed {collapsed_count} sections")
-        except Exception:
-            pass
-
-    def action_expand_all(self):
-        """Expand all tree widgets in the chat"""
-        expanded_count = 0
-        try:
-            # Expand all ToolTreeWidgets
-            for widget in self.query(ToolTreeWidget):
-                if widget._collapsed:
-                    widget._collapsed = False
-                    widget.refresh()
-                    expanded_count += 1
-            
-            # Expand all ThinkingTreeWidgets
-            for widget in self.query(ThinkingTreeWidget):
-                if widget._collapsed:
-                    widget._collapsed = False
-                    widget.refresh()
-                    expanded_count += 1
-            
-            # Expand all OracleTreeWidgets
-            for widget in self.query(OracleTreeWidget):
-                if widget._collapsed:
-                    widget._collapsed = False
-                    widget.refresh()
-                    expanded_count += 1
-            
-            # Expand all SubAgentTreeWidgets
-            for widget in self.query(SubAgentTreeWidget):
-                if widget._collapsed:
-                    widget._collapsed = False
-                    widget.refresh()
-                    expanded_count += 1
-            
-            if expanded_count:
-                self.notify(f"Expanded {expanded_count} sections")
-        except Exception:
-            pass
+    def action_toggle_transcript(self):
+        self._transcript_expanded = not self._transcript_expanded
+        for widget_type in (ToolTreeWidget, ThinkingTreeWidget, OracleTreeWidget, SubAgentTreeWidget):
+            for widget in self.query(widget_type):
+                widget._collapsed = not self._transcript_expanded
+                widget.refresh(layout=True)
 
     def action_toggle_mode(self):
-        """Toggle between smart and rush modes"""
-        new_mode = "rush" if self._mode == "smart" else "smart"
-        self._set_mode(new_mode)
+        if self._chat_worker:
+            input_widget = self._get_active_input()
+            message = input_widget.value.strip()
+            if message:
+                input_widget.value = ""
+                self._queue_message(message)
+        else:
+            self._set_mode("rush" if self._mode == "smart" else "smart")
 
-    async def action_connect_provider(self):
+    def action_connect_provider(self):
         """Show connect provider modal"""
-        result = await self.push_screen_wait(ProviderConnectModal())
-        if result:
-            self.notify(f"Selected provider: {result}")
+        self.push_screen(ProviderConnectModal(self._get_model_config()), self._on_provider_selected)
 
     def action_new_session(self):
         """Create a new session"""
+        if self._chat_worker:
+            self.notify("Finish or cancel the active task before switching sessions")
+            return
         logger.info("action_new_session called - clearing messages and starting new session")
         from codesm.session.session import Session
         if self.agent:
-            self.agent.session = Session.create(self.directory)
+            self.agent.new_session()
         
-        # Reset token/cost tracking
         self._total_tokens = 0
         self._total_cost = 0.0
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            sidebar.update_context(0, 0, 0.0)
-            sidebar.update_title("New Session")
-        except Exception:
-            pass
-        
-        if self.in_chat:
-            messages = self.query_one("#messages", Vertical)
-            messages.remove_children()
+        self._context_left = 100
+        self._queued_messages.clear()
+        self.query_one("#messages", Vertical).remove_children()
+        self._get_active_input().value = ""
+        self._set_processing_state(False)
         self._switch_to_welcome()
-        self.notify("New session started")
-    
+
     def _fork_session(self):
-        """Fork current session to explore an alternative path"""
         if not self.agent or not self.agent.session:
             self.notify("No active session to fork")
             return
-        
-        session = self.agent.session
-        forked = session.fork()
+        if self._chat_worker or self.agent._chat_active:
+            self.notify("Finish or cancel the active task before switching sessions")
+            return
+        forked = self.agent.session.fork()
         self.agent.session = forked
-        
-        # Update UI
-        try:
-            sidebar = self.query_one("#context-sidebar", ContextSidebar)
-            sidebar.update_title(forked.title)
-        except Exception:
-            pass
-        
         self.notify(f"Forked session: {forked.branch_name}")
-    
+
     def _show_branches(self):
         """Show branches of current session"""
         if not self.agent or not self.agent.session:

@@ -106,3 +106,42 @@ def add_memory(
     
     scope = "global" if global_memory else "project"
     console.print(f"[green]Added {memory_type} memory ({scope}): {text[:50]}...[/green]")
+
+
+@memory_app.command("search")
+def search_history(
+    query: str = typer.Argument(..., help="Keywords, error text, file name, or command"),
+    directory: Path = typer.Option(Path("."), "--directory", "-d", help="Project directory"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Restrict to a session"),
+    limit: int = typer.Option(8, "--limit", min=1, max=50),
+):
+    """Search local conversations, tool results, and execution logs; no API calls."""
+    from .history import HistoryStore
+    history = HistoryStore()
+    history.import_project(directory)
+    console.print_json(data=history.search(directory, query, session, limit))
+
+
+@memory_app.command("read")
+def read_history(
+    record_id: int = typer.Argument(..., min=1, help="Record ID returned by memory search"),
+    directory: Path = typer.Option(Path("."), "--directory", "-d"),
+    offset: int = typer.Option(0, "--offset", min=0, help="Continue from next_offset in a previous page"),
+):
+    """Read an exact archived record, including long tool output, one page at a time."""
+    from .history import HistoryStore
+    result = HistoryStore().read(directory, record_id, offset)
+    if result is None:
+        console.print("No record found in this project.")
+        raise typer.Exit(1)
+    console.print_json(data=result)
+
+
+@memory_app.command("reindex")
+def reindex_history(
+    directory: Path = typer.Option(Path("."), "--directory", "-d"),
+):
+    """Refresh the search index from this project's session JSON and execution logs."""
+    from .history import HistoryStore
+    HistoryStore().import_project(directory, force=True)
+    console.print("Local session and event history indexed.")

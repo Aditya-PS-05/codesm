@@ -65,7 +65,7 @@ class FinderTool(Tool):
     
     async def execute(self, args: dict, context: dict) -> str:
         """Execute the finder search"""
-        from codesm.provider.base import get_provider
+        from codesm.provider.base import complete
         
         query = args.get("query", "")
         if not query:
@@ -86,7 +86,6 @@ class FinderTool(Tool):
         
         # Step 2: Use Gemini Flash to intelligently filter and rank results
         try:
-            provider = get_provider("finder")  # Uses Gemini Flash via router
             
             user_prompt = f"""Query: {query}
 
@@ -100,15 +99,8 @@ Analyze these results and provide:
 3. Any related files that might be relevant"""
 
             # Collect response
-            response_text = ""
-            async for chunk in provider.stream(
-                system=FINDER_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=None,  # No tools needed for summarization
-            ):
-                if chunk.type == "text":
-                    response_text += chunk.content
-            
+            response_text = await complete(FINDER_SYSTEM_PROMPT, user_prompt, model="finder")
+
             return response_text
             
         except Exception as e:

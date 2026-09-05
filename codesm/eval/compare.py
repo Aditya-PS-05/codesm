@@ -7,6 +7,9 @@ tokens, tool use, time, and verdict per provider.
 """
 
 from dataclasses import dataclass, field
+from collections import defaultdict
+import math
+import statistics
 from pathlib import Path
 from typing import Optional
 
@@ -50,7 +53,29 @@ class ComparisonResult:
             "passed_count": self.passed_count,
             "total": len(self.runs),
             "runs": [r.to_dict() for r in self.runs],
+            "summary": self.summarize(),
         }
+
+    def summarize(self) -> list[dict]:
+        groups = defaultdict(list)
+        for run in self.runs:
+            groups[(run.model, run.variant)].append(run)
+        summary = []
+        for (model, variant), runs in groups.items():
+            durations = sorted(r.wall_clock_ms for r in runs)
+            successes = sum(r.passed for r in runs)
+            priced = all(r.cost_usd is not None for r in runs)
+            total_cost = sum(r.cost_usd for r in runs) if priced else None
+            summary.append({"model": model, "variant": variant, "runs": len(runs),
+                "passed": successes, "pass_rate": successes / len(runs),
+                "p50_ms": statistics.median(durations),
+                "p95_ms": durations[math.ceil(len(runs) * .95) - 1],
+                "total_cost_usd": total_cost,
+                "cost_per_success_usd": total_cost / successes if priced and successes else None,
+                "requests": sum(r.requests for r in runs),
+                "estimated_requests": sum(r.estimated_requests for r in runs),
+                "human_corrections": None})
+        return summary
 
 
 async def run_comparison(
@@ -58,6 +83,9 @@ async def run_comparison(
     task_file: Optional[Path] = None,
     models: Optional[list[str]] = None,
     directory_override: Optional[Path] = None,
+    variants: list[str] | None = None,
+    repeat: int = 1,
+    config=None,
 ) -> ComparisonResult:
     """Run a task against multiple models sequentially and collect reports.
 
@@ -65,22 +93,20 @@ async def run_comparison(
     commands often touch the same filesystem paths, so parallel runs would
     race on the workspace. Serial runs give clean per-provider metrics.
     """
-    models = models or DEFAULT_PROVIDER_MODELS
-
-    result = ComparisonResult(
-        task_name=task.name,
-        task_description=task.description,
-        task_file=str(task_file) if task_file else "",
-    )
-
-    for model in models:
-        report = await run_task(
-            task,
-            task_file=task_file,
-            model_override=model,
-            directory_override=directory_override,
-        )
-        result.runs.append(report)
+    if repeat < 1:
+        raise ValueError("repeat must be positive")
+    variants = variants or [getattr(config, "delegation", "adaptive")]
+    if any(v not in ("single", "specialists", "adaptive") for v in variants):
+        raise ValueError("variants must be single, specialists, or adaptive")
+    models = models or [None]
+    result = ComparisonResult(task.name, task.description, str(task_file or ""))
+    for repetition in range(1, repeat + 1):
+        for model in models:
+            for variant in variants:
+                report = await run_task(task, task_file=task_file, model_override=model,
+                    directory_override=directory_override, variant=variant, config=config)
+                report.repetition = repetition
+                result.runs.append(report)
 
     return result
 
@@ -94,7 +120,7 @@ def format_comparison_table(result: ComparisonResult) -> str:
     if not result.runs:
         return "No runs to display."
 
-    headers = ["Provider", "Model", "Verdict", "Iter", "Tools", "Tok In", "Tok Out", "Wall(ms)", "Notes"]
+    headers = ["Variant", "Model", "Verdict", "Iter", "Tools", "Tok In", "Tok Out", "Wall(ms)", "Notes"]
     rows: list[list[str]] = []
 
     for r in result.runs:
@@ -117,7 +143,7 @@ def format_comparison_table(result: ComparisonResult) -> str:
         notes = ", ".join(notes_parts) if notes_parts else "-"
 
         rows.append([
-            r.provider,
+            r.variant,
             _shorten(r.model, 36),
             verdict,
             str(r.iterations),

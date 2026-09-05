@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import AsyncIterator
+from contextlib import nullcontext
+import uuid
 
 from codesm.provider.base import get_provider, StreamChunk
 from codesm.tool.registry import ToolRegistry
@@ -22,12 +24,14 @@ class SubAgentConfig:
     max_iterations: int = 25
     allowed_tools: list[str] | None = None  # None = all tools
     denied_tools: list[str] | None = None  # Tools to exclude
+    read_only: bool = True
 
 
 # Built-in subagent configurations
 SUBAGENT_CONFIGS: dict[str, SubAgentConfig] = {
     "coder": SubAgentConfig(
         name="coder",
+        read_only=False,
         description="Implements code changes across multiple files. Use for complex multi-file edits, refactoring, or feature implementation.",
         system_prompt="""You are a focused coding agent. Your job is to implement the specific task given to you.
 
@@ -328,26 +332,51 @@ class SubAgent:
         directory: Path,
         parent_model: str,
         parent_tools: ToolRegistry,
+        parent_context: dict | None = None,
+        model_override: str | None = None,
     ):
         self.config = config
         self.directory = Path(directory).resolve()
         self.parent_tools = parent_tools
+        from codesm.agent.execution import current_context
+        self.parent_context = parent_context if parent_context is not None else (current_context.get() or {})
+        self.id = f"agent_{uuid.uuid4().hex[:12]}"
         
-        # Use config model or inherit from parent
-        model = config.model or parent_model
-        self.provider = get_provider(model)
+        from dataclasses import replace
+        settings = self.parent_context.get("config")
+        profile = settings.agents.get(config.name) if settings else None
+        if profile:
+            changes = {}
+            if profile.prompt:
+                changes["system_prompt"] = config.system_prompt + "\n\n" + profile.prompt
+            if "max_iterations" in profile.model_fields_set:
+                changes["max_iterations"] = profile.max_iterations
+            self.config = replace(config, **changes)
+        self.profile = profile
+        model = (parent_model if settings and settings.pin_model else
+                 (profile.model if profile else None) or model_override or parent_model)
+        token = current_context.set(self.parent_context)
+        try:
+            self.provider = get_provider(model)
+        finally:
+            current_context.reset(token)
+        self.provider.options = dict(getattr(self.provider, "options", {}))
+        if profile:
+            self.provider.options.update(profile.model_dump(include={"reasoning_effort", "max_output_tokens"}, exclude_none=True))
         self.model = model
         
         # Create filtered tool registry
         self.tools = self._create_filtered_tools()
         
         # ReAct loop with config iterations
-        self.react_loop = ReActLoop(max_iterations=config.max_iterations)
+        self.react_loop = ReActLoop(max_iterations=self.config.max_iterations)
     
     def _create_filtered_tools(self) -> ToolRegistry:
         """Create a tool registry with only allowed tools"""
         # Start with a fresh registry
+        from codesm.tool.registry import READ_ONLY_TOOLS, COMPOSITE_TOOLS
         filtered = ToolRegistry()
+        filtered._writer_lock = self.parent_tools._writer_lock
         
         # Get all tools from parent
         all_tools = self.parent_tools._tools.copy()
@@ -364,7 +393,23 @@ class SubAgent:
             # Remove denied tools
             for name in self.config.denied_tools:
                 all_tools.pop(name, None)
+
+        # Child workers cannot delegate through tools holding a reference to the parent registry.
+        for name in COMPOSITE_TOOLS - {"batch"}:
+            all_tools.pop(name, None)
+        if self.config.read_only or self.parent_context.get("read_only"):
+            all_tools = {name: tool for name, tool in all_tools.items() if name in READ_ONLY_TOOLS}
+        for name in self.parent_context.get("denied_tools", ()):
+            all_tools.pop(name, None)
         
+        allowed = self.parent_context.get("allowed_tools")
+        if allowed is not None:
+            all_tools = {name: tool for name, tool in all_tools.items() if name in allowed}
+        if self.profile and self.profile.tools:
+            enabled = {name for name, allowed in self.profile.tools.items() if allowed}
+            all_tools = {name: tool for name, tool in all_tools.items()
+                         if (not enabled or name in enabled) and self.profile.tools.get(name, True)}
+
         # Replace the internal tools dict
         filtered._tools = all_tools
         
@@ -372,35 +417,21 @@ class SubAgent:
     
     async def run(self, prompt: str) -> str:
         """Run the subagent with the given prompt and return the result"""
-        messages = [{"role": "user", "content": prompt}]
-        
-        context = {
-            "workspace_dir": str(self.directory),
-            "cwd": self.directory,
-            "subagent": True,
-            "subagent_type": self.config.name,
-        }
-        
-        # Build system prompt
-        system = self.config.system_prompt + f"\n\n# Environment\nWorking directory: {self.directory}"
-        
-        # Run the ReAct loop and collect response
         full_response = ""
+        status = "running"
         tool_summaries = []
-        
-        async for chunk in self.react_loop.execute(
-            provider=self.provider,
-            system_prompt=system,
-            messages=messages,
-            tools=self.tools,
-            context=context,
-        ):
+        async for chunk in self.run_streaming(prompt):
             if chunk.type == "text":
                 full_response += chunk.content
+            elif chunk.type == "run_status":
+                status = chunk.content
             elif chunk.type == "tool_result":
                 # Collect tool execution summaries
-                tool_summaries.append(f"✓ {chunk.name}")
+                tool_summaries.append(chunk.name)
         
+        if status not in ("completed", "verified"):
+            raise RuntimeError(f"Subagent {self.config.name} ended {status}: {full_response[-1000:]}")
+
         # Build result with metadata
         result = full_response
         
@@ -411,22 +442,90 @@ class SubAgent:
     
     async def run_streaming(self, prompt: str) -> AsyncIterator[StreamChunk]:
         """Run the subagent with streaming output"""
+        from codesm.rules import RulesDiscovery
         messages = [{"role": "user", "content": prompt}]
-        
-        context = {
+        context = {**self.parent_context,
             "workspace_dir": str(self.directory),
             "cwd": self.directory,
             "subagent": True,
             "subagent_type": self.config.name,
+            "run_id": self.id,
+            "tools": self.tools,
+            "model": self.model,
+            "read_only": self.config.read_only or self.parent_context.get("read_only", False),
         }
-        
+        # Child transcripts must not be mixed into the parent's tool-call sequence.
+        context.pop("session", None)
+        context.pop("on_tool_result", None)
+        context.pop("context_manager", None)
+        if self.profile:
+            context["context_tokens"] = self.profile.context_tokens
+        rules = context.get("rules")
+        if rules is None:
+            rules = RulesDiscovery(workspace=self.directory).get_combined_rules()
         system = self.config.system_prompt + f"\n\n# Environment\nWorking directory: {self.directory}"
-        
-        async for chunk in self.react_loop.execute(
-            provider=self.provider,
-            system_prompt=system,
-            messages=messages,
-            tools=self.tools,
-            context=context,
-        ):
-            yield chunk
+        system += f"\n\n# Project rules\n{rules}\n\n# Parent task constraints\n{context.get('task_constraints', '')}"
+        from codesm.agent.execution import emit
+        from contextlib import aclosing
+        import asyncio
+        import time
+        queue = context.get("event_queue")
+        record = {"model": self.model, "role": self.config.name, "task": prompt,
+                  "status": "waiting", "result": "", "cost": None}
+        context.get("agent_runs", {})[self.id] = record
+        save = context.get("save_session", lambda: None)
+        save()
+
+        def notify(kind, content="", **metadata):
+            emit(context, kind, model=self.model, status=record["status"], **metadata)
+            if queue is not None:
+                queue.put_nowait(StreamChunk(type=kind, content=content,
+                    subagent_id=self.id, subagent_type=self.config.name,
+                    metadata={"model": self.model, "status": record["status"], **metadata}))
+
+        notify("subagent_start", prompt[:200])
+        started = time.monotonic()
+        output = []
+        last_checkpoint = 0.0
+        # ponytail: one writer per checkout; use isolated worktrees if parallel editing is needed.
+        lock = self.tools._writer_lock if not context["read_only"] and not context.get("owns_writer") else nullcontext()
+        try:
+            async with lock:
+                context["owns_writer"] = not context["read_only"]
+                record["status"] = "running"
+                notify("subagent_progress", "Running")
+                async with aclosing(self.react_loop.execute(
+                    provider=self.provider, system_prompt=system, messages=messages,
+                    tools=self.tools, context=context,
+                )) as stream:
+                    async for chunk in stream:
+                        if chunk.type == "text":
+                            output.append(chunk.content)
+                            if time.monotonic() - last_checkpoint >= 1:
+                                record["result"] = "".join(output)
+                                save()
+                                last_checkpoint = time.monotonic()
+                        elif chunk.type == "tool_result":
+                            notify("subagent_progress", chunk.content[:2000], tool=chunk.name)
+                        yield chunk
+                record["status"] = context.get("completion_status", "completed")
+        except asyncio.CancelledError:
+            record["status"] = "cancelled"
+            raise
+        except Exception as error:
+            record.update(status="failed", error=str(error))
+            raise
+        finally:
+            if record["status"] in ("running", "waiting"):
+                record["status"] = "cancelled"
+            record["result"] = "".join(output)
+            record["duration_ms"] = int((time.monotonic() - started) * 1000)
+            budget = context.get("budget")
+            if budget is not None and hasattr(budget, "_session_usage"):
+                usage = [r for r in budget._session_usage if r.run_id == self.id]
+                record["cost"] = sum(r.cost for r in usage) if usage and all(r.cost_known for r in usage) else None
+            notify("subagent_done", (record["result"] or record.get("error", ""))[-12000:],
+                   cost=record["cost"], duration_ms=record["duration_ms"])
+            save()
+            if hasattr(self.provider, "close"):
+                await self.provider.close()

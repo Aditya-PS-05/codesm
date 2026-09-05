@@ -343,6 +343,11 @@ async def summarize_messages(
         return ""
     
     try:
+        from codesm.agent.execution import current_context
+        if current_context.get() is not None and provider is None:
+            from codesm.provider.base import complete
+            result = await complete(SUMMARY_SYSTEM_PROMPT, f"Summarize this conversation:\n\n{formatted_text}")
+            return format_compact_summary(result) or _create_fallback_summary(messages)
         # If provider is passed, use it directly
         if provider:
             result = ""

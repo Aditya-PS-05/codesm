@@ -1,151 +1,52 @@
 ---
 title: Keybinds
-description: Customize keyboard shortcuts.
+description: Keyboard shortcuts in the terminal interface.
 ---
 
-codesm uses `ctrl+x` as the leader key for most commands.
-
----
-
-## Default Keybinds
-
-### Navigation
+## Messages and transcript
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Switch mode (Build/Plan) |
-| `ctrl+x l` | List sessions |
-| `ctrl+x h` | Show help |
-| `↑` / `↓` | Navigate history |
-| `ctrl+l` | Clear screen |
+| `Enter` | Send a message; queue it if work is active |
+| `Tab` | Queue a message while busy; toggle Smart/Rush mode while idle |
+| `Ctrl+T` | Expand or collapse tool output, reasoning summaries, and specialist details |
+| `Ctrl+P` | Open the command palette |
+| `Ctrl+L` | Clear the displayed transcript |
 
-### Session
+Drag over transcript text to select it, then press **Ctrl+C** to copy the selection.
+**Esc** clears the selection. Selecting text across a link or tool output does not
+open the link or collapse the output.
 
-| Key | Action |
-|-----|--------|
-| `ctrl+x n` | New session |
-| `ctrl+x c` | Compact context |
-| `ctrl+x u` | Undo |
-| `ctrl+x r` | Redo |
+When a tool group or specialist is focused, **Enter** or **Space** toggles its
+details. **C**, **Y**, or **Ctrl+Shift+C** copies selected text, or the full focused
+message and tool output when nothing is selected. Some terminals reserve
+**Ctrl+Shift+C** for their own selection; **Ctrl+C** copies codesm's selection.
 
-### Editing
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Send message |
-| `Shift+Enter` | New line |
-| `ctrl+x e` | External editor |
-| `ctrl+x x` | Export to Markdown |
-
-### Tools
+## Sessions and control
 
 | Key | Action |
 |-----|--------|
-| `ctrl+x m` | Models |
-| `ctrl+x t` | Themes |
-| `ctrl+x i` | Initialize project |
-| `ctrl+x d` | Toggle details |
+| `Esc` | Clear selected text; otherwise interrupt active work |
+| `Ctrl+C` | Copy selected text; otherwise interrupt active work or quit when idle |
+| `Ctrl+Z` | Interrupt active work; quit when idle |
+| `Ctrl+N` | Start a new session when idle |
 
-### Control
+Use the arrow keys and **Enter** to choose items in pickers; **Esc** closes dialogs.
+When command or file suggestions are open, their selection controls take priority.
 
-| Key | Action |
-|-----|--------|
-| `ctrl+c` | Cancel operation |
-| `ctrl+x q` | Quit |
-| `Esc` | Close modal |
+## Models, modes, and themes
 
----
+Use slash commands for these settings:
 
-## Custom Keybinds
+| Command | Action |
+|---------|--------|
+| `/models` | Select a model |
+| `/mode` | Choose Smart or Rush mode |
+| `/smart`, `/rush` | Set a mode directly |
+| `/theme` | Choose a color palette; Terminal is the default |
+| `/connect` | Connect a provider |
+| `/session` | Browse saved sessions |
+| `/cost` | Inspect usage and cost |
 
-Override keybinds in `codesm.json`:
-
-```json title="codesm.json"
-{
-  "keybinds": {
-    "new_session": "ctrl+n",
-    "undo": "ctrl+z",
-    "redo": "ctrl+shift+z",
-    "quit": "ctrl+q",
-    "help": "f1"
-  }
-}
-```
-
----
-
-## Leader Key
-
-Change the leader key:
-
-```json title="codesm.json"
-{
-  "keybinds": {
-    "leader": "ctrl+a"
-  }
-}
-```
-
-Then use `ctrl+a n` for new session, etc.
-
----
-
-## Available Commands
-
-All bindable commands:
-
-| Command | Default | Description |
-|---------|---------|-------------|
-| `new_session` | `ctrl+x n` | Start new session |
-| `sessions` | `ctrl+x l` | List sessions |
-| `compact` | `ctrl+x c` | Compact context |
-| `undo` | `ctrl+x u` | Undo last message |
-| `redo` | `ctrl+x r` | Redo message |
-| `help` | `ctrl+x h` | Show help |
-| `models` | `ctrl+x m` | Model selector |
-| `themes` | `ctrl+x t` | Theme selector |
-| `editor` | `ctrl+x e` | External editor |
-| `export` | `ctrl+x x` | Export session |
-| `init` | `ctrl+x i` | Initialize project |
-| `details` | `ctrl+x d` | Toggle details |
-| `quit` | `ctrl+x q` | Exit |
-| `cancel` | `ctrl+c` | Cancel operation |
-| `switch_mode` | `Tab` | Toggle Build/Plan |
-
----
-
-## Vim-style Bindings
-
-For Vim users:
-
-```json title="codesm.json"
-{
-  "keybinds": {
-    "leader": "space",
-    "mode": "vim",
-    "mappings": {
-      "normal": {
-        "j": "scroll_down",
-        "k": "scroll_up",
-        "gg": "scroll_top",
-        "G": "scroll_bottom",
-        "/": "search"
-      }
-    }
-  }
-}
-```
-
----
-
-## Disabling Keybinds
-
-Disable specific keybinds:
-
-```json title="codesm.json"
-{
-  "keybinds": {
-    "disabled": ["ctrl+x d", "ctrl+x x"]
-  }
-}
-```
+The terminal uses the shortcuts above directly. It does not load a `Ctrl+X`
+leader, Vim mappings, or custom `keybinds` from `codesm.json`.

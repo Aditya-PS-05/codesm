@@ -1,121 +1,120 @@
 ---
 title: Config
-description: Configure codesm for your workflow.
+description: Configure models, specialist roles, execution limits, and provider options.
 ---
 
-codesm can be configured using a JSON configuration file or environment variables.
+Codesm uses one configuration for the main agent and its specialists. It reads the
+file named by `CODESM_CONFIG`, otherwise `codesm.json` in the selected workspace,
+otherwise `~/.config/codesm/config.json`. The first file found wins; files are not merged.
 
----
-
-## Configuration File
-
-codesm looks for configuration in these locations (in order):
-
-1. `./codesm.json` - Project-specific config
-2. `~/.config/codesm/config.json` - User config
-
-### Example Config
+## Example
 
 ```json title="codesm.json"
 {
-  "$schema": "https://codesm.dev/config.json",
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-20250514",
-  "theme": "dark",
-  "tui": {
-    "scroll_speed": 3
-  },
-  "permissions": {
-    "auto_approve_read": true,
-    "auto_approve_edit": false,
-    "auto_approve_bash": false
+  "model": "openai/gpt-5-mini",
+  "delegation": "adaptive",
+  "max_requests": 60,
+  "max_task_tokens": 500000,
+  "agents": {
+    "main": {"reasoning_effort": "low", "max_output_tokens": 4096},
+    "planner": {"reasoning_effort": "medium", "max_iterations": 10},
+    "oracle": {"reasoning_effort": "high", "max_iterations": 12},
+    "coder": {"max_iterations": 25}
   }
 }
 ```
 
----
+`--model` overrides the main model. A specialist uses its role's explicit `model`,
+then the adaptive router's selected model, then the main model. Set `pin_model: true`
+to keep specialists and helper aliases on the main model. Without explicit role or
+routing assignments, delegation does not silently switch providers.
 
-## Environment Variables
+`routing_models` maps `trivial`, `simple`, `moderate`, `complex`, or `expert` to
+`provider/model` strings. Adaptive routing uses local task heuristics; it makes no
+extra classifier request. `single` disables delegation and model-powered analysis
+tools. `specialists` allows named roles and rejects `auto`. `adaptive` also permits
+automatic role and model selection. None forces delegation for every task.
 
-### Provider Keys
+## Role settings
 
-```bash
-# Anthropic
-export ANTHROPIC_API_KEY="sk-ant-..."
+Profiles under `agents` support `model`, `prompt`, `reasoning_effort`,
+`max_output_tokens`, `max_iterations`, `context_tokens`, and `tools`.
+`prompt` adds instructions to the role's normal prompt. Effort values are sent to
+the selected provider; choose a value supported by that model. Context defaults to
+128,000 tokens; configure it to fit your selected model. Compaction accounts for
+system instructions and tool schemas as well as conversation history.
 
-# OpenAI
-export OPENAI_API_KEY="sk-..."
+With `tools`, true entries form an allowlist when any are present; false entries
+always deny that tool. Profiles can narrow the inherited capability set. They
+cannot give a read-only specialist shell, editing, or arbitrary MCP execution.
+Use top-level `read_only: true` or `denied_tools` to restrict the whole task.
 
-# OpenRouter
-export OPENROUTER_API_KEY="sk-or-..."
+## Usage and budgets
 
-# Ollama (local)
-export OLLAMA_BASE_URL="http://localhost:11434"
-```
+`max_requests` defaults to 200. `max_task_tokens` and `budget_usd` are optional.
+Limits cover the main agent, specialist calls, model-powered tools, and compaction
+summaries. Request, token, and dollar reservations happen before dispatch, including
+parallel requests. Usage is saved with the session and restored on resume; a new
+session starts a fresh allowance.
 
-### Other Settings
+A dollar limit requires current prices for every used model:
 
-```bash
-# Default provider
-export CODESM_PROVIDER="anthropic"
-
-# Default model
-export CODESM_MODEL="claude-sonnet-4-20250514"
-
-# Data directory
-export CODESM_DATA_DIR="~/.local/share/codesm"
-
-# Log level
-export CODESM_LOG_LEVEL="INFO"
-```
-
----
-
-## Options Reference
-
-### Top-level Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `provider` | string | `"anthropic"` | Default LLM provider |
-| `model` | string | varies | Default model ID |
-| `theme` | string | `"dark"` | UI theme |
-
-### TUI Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `tui.scroll_speed` | number | `3` | Scroll speed multiplier |
-| `tui.show_timestamps` | boolean | `false` | Show message timestamps |
-| `tui.show_token_count` | boolean | `true` | Show token usage |
-
-### Permission Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `permissions.auto_approve_read` | boolean | `true` | Auto-approve file reads |
-| `permissions.auto_approve_edit` | boolean | `false` | Auto-approve file edits |
-| `permissions.auto_approve_bash` | boolean | `false` | Auto-approve shell commands |
-
----
-
-## Project Configuration
-
-You can create a project-specific `codesm.json` that overrides user settings:
-
-```json title="./codesm.json"
+```json
 {
-  "model": "claude-sonnet-4-20250514",
-  "rules": ["Always use TypeScript strict mode"],
-  "tools": {
-    "bash": {
-      "allowed_commands": ["npm", "pnpm", "node", "git"]
-    }
+  "model": "openai/gpt-5-mini",
+  "budget_usd": 1.0,
+  "model_prices": {
+    "openai/gpt-5-mini": {"input": 0.25, "output": 2.0}
   }
 }
 ```
 
-This is useful for:
-- Enforcing coding standards per project
-- Restricting tool usage
-- Setting project-specific models
+Prices are USD per million tokens. These example rates match the
+[OpenAI GPT-5 mini model page](https://developers.openai.com/api/docs/models/gpt-5-mini)
+checked September 5, 2026; check current prices before using a dollar limit.
+Unpriced usage is displayed as **unknown**, never free. Ollama has zero provider
+API cost; local hardware costs are not measured.
+
+Providers supply actual token usage where available. Missing or interrupted usage
+is labeled estimated and retains the configured output allowance, including hidden
+reasoning that cannot be counted from visible text.
+Dollar totals remain estimates from configured rates. Cache discounts, provider
+surcharges, imperfect input estimates, and process crashes mean this is not a
+provider billing guarantee. External MCP and search-service charges are outside
+model-token accounting. SDK retries are disabled for OpenAI and OpenRouter so they
+do not create hidden requests.
+
+## Providers
+
+Credentials can come from `/connect`, the environment (`OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`), or `providers.<id>.api_key`.
+Prefer environment variables or the credential store over checked-in secrets.
+Provider entries also accept `api_key_env`, `base_url`, `models` (additional model
+IDs for the picker), and `options`. Kimi, Z.ai, Google, DeepSeek, xAI, and Mistral
+have built-in endpoints and their own credentials; see [Providers](/providers).
+Unknown provider names work when a `base_url` is configured for an
+OpenAI-compatible API. `codesm models --refresh` queries current catalogs.
+
+OpenAI uses Responses by default, preserving tool call IDs and encrypted reasoning
+items in resumable history. For a compatible endpoint requiring Chat Completions:
+
+```json
+{
+  "providers": {
+    "openai": {"options": {"api": "chat_completions"}}
+  }
+}
+```
+
+Anthropic uses its Messages streaming API. Its custom `base_url` accepts the server
+origin or an origin ending in `/v1`. OpenRouter and other compatible providers use
+Chat Completions. Native thinking data and tool signatures survive saved sessions;
+switching providers does not forward another provider's private replay fields.
+Ollama uses `providers.ollama.base_url` or `OLLAMA_HOST`.
+
+`options.extra_body` forwards vendor options such as `thinking`. Core request
+fields and output limits cannot be overridden there. Use `max_output_tokens` in
+an agent profile (or provider options) for the output allowance. Longer thinking
+runs may need 16,384 tokens or more. Effort is optional and model-specific;
+supported configuration values include `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh`, and `max`, but individual providers accept only a subset.

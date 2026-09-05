@@ -67,7 +67,7 @@ class MultiFileEditTool(Tool):
         validation_errors = []
         
         for i, edit in enumerate(edits):
-            path = Path(edit.get("path", ""))
+            path = Path(context.get("cwd", ".")) / Path(edit.get("path", "")).expanduser()
             operation = edit.get("operation", "edit")
             old_content = edit.get("old_content", "")
             new_content = edit.get("new_content", "")
@@ -134,38 +134,18 @@ class MultiFileEditTool(Tool):
         if validation_errors:
             return "Validation failed:\n" + "\n".join(f"  • {e}" for e in validation_errors)
         
-        # Show diff preview for all files
         try:
-            from codesm.diff_preview import (
-                request_diff_preview_multi,
-                DiffPreviewSkippedError,
-                DiffPreviewCancelledError,
-            )
-            
-            preview_files = []
+            from codesm.diff_preview import request_diff_preview, DiffPreviewSkippedError, DiffPreviewCancelledError
+            session_id = session.id if session else context.get("session_id", "default")
             for edit in prepared_edits:
-                preview_files.append({
-                    "path": edit["path"],
-                    "old_content": edit.get("_display_old", edit["old_content"]),
-                    "new_content": edit.get("_display_new", edit["new_content"]),
-                })
-            
-            session_id = session.id if session else "default"
-            await request_diff_preview_multi(
-                session_id=session_id,
-                files=preview_files,
-                tool_name="multifile_edit",
-            )
-        except DiffPreviewSkippedError:
-            return "MultiFileEdit skipped by user"
-        except DiffPreviewCancelledError:
-            return "MultiFileEdit cancelled by user"
-        except (ImportError, AttributeError):
-            pass  # Multi-file preview not implemented, proceed anyway
-        except Exception:
-            pass  # If diff preview fails, proceed anyway
-        
-        # Execute atomic transaction
+                await request_diff_preview(session_id, edit["path"],
+                    edit.get("_display_old", edit["old_content"]),
+                    edit.get("_display_new", edit["new_content"]), "multifile_edit")
+        except (DiffPreviewSkippedError, DiffPreviewCancelledError):
+            return "MultiFileEdit cancelled before applying changes"
+        except Exception as error:
+            return f"Error: Could not confirm edit: {error}"
+
         manager = AtomicEditManager.get_instance()
         txn = manager.create_transaction(
             description=description or f"Multi-file edit ({len(prepared_edits)} files)"

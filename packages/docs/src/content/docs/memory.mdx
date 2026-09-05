@@ -1,192 +1,120 @@
 ---
-title: Cross-Session Memory
-description: Remember preferences and solutions across sessions.
+title: Local Memory and Model Continuity
+description: Continue work across providers, sessions, and restarts using local history.
 ---
 
-codesm remembers user preferences, learned facts, and past solutions across sessions.
+codesm keeps a full local transcript and a smaller working context. Switching from
+OpenAI to Anthropic, OpenRouter, or another provider keeps the same session,
+completed tool calls, results, and task list. It does not ask the old provider to
+prepare a handoff.
 
----
+## Continue after a provider limit
 
-## Overview
+1. Open `/models` and choose another connected provider's model.
+2. Send `continue`, or describe the next step.
 
-Memory allows the agent to:
-- Remember your coding preferences
-- Learn patterns from successful sessions
-- Recall solutions that worked before
-- Build context over time
-
-Memory is stored both globally and per-project.
-
----
-
-## Memory Types
-
-| Type | Description | Example |
-|------|-------------|---------|
-| `preference` | User preferences | "Use pytest over unittest" |
-| `fact` | Learned facts | "This project uses PostgreSQL" |
-| `pattern` | Common patterns | "Always add tests for new features" |
-| `solution` | Past solutions | "Fixed auth by adding token refresh" |
-
----
-
-## CLI Commands
-
-### List Memories
+If work is still running, interrupt it first. To resume after restarting codesm:
 
 ```bash
-# List all memories (global + project)
+codesm run /path/to/project --session SESSION_ID --model anthropic/YOUR_MODEL_ID
+```
+
+Use `/session` to select a saved session. The saved project directory is used when
+resuming a session. Provider limits and codesm's own configured request, token, or
+cost limits are separate; changing models does not reset the latter.
+
+## What survives
+
+- User messages and assistant responses, including partial responses when a
+  request fails or is interrupted.
+- Tool arguments and returned output, including edits, test output, errors, and
+  executed commands.
+- Specialist results, task lists, debugging state, usage, and execution events.
+- Compacted working context, alongside the complete original transcript.
+- Known file paths and their size/mtime at the last read or edit. On continuation,
+  codesm checks metadata for recent known files and marks changes for verification.
+- Parent-session links, task lists, and known file state when forking or handing off.
+
+A running response is checkpointed on its first text chunk and at most once per
+second thereafter. Normal failure and cancellation save the remaining partial
+text. A hard process kill or power loss can lose the text since the last checkpoint;
+work that was in flight is marked interrupted, not successful. Unknown tool outcomes
+must be checked before retrying an action.
+
+Memory preserves the output codesm actually received; it cannot recover tool output
+that a tool discarded before returning, or a provider's hidden internal reasoning.
+Opaque provider replay data stays local and is used only by the compatible provider.
+
+## How the next model uses memory
+
+Every turn receives the session's working conversation plus a bounded continuation
+brief: previous run status, tasks, specialist results, known file state, saved notes,
+and related history excerpts. Compaction checkpoints are reused after a model switch
+or restart; full historical output remains searchable.
+
+The `recall` tool searches local history and reads complete records in pages. It
+needs no model call, embeddings, network service, or extra dependency. Search is
+limited to the exact project directory, across that project's sessions. Retrieved
+text is historical evidence; current instructions take precedence.
+
+This avoids repeating investigation solely to rebuild lost context. It does not
+guarantee that a model never rereads files: external edits, an uncertain action, or
+missing evidence can require fresh checks. Size/mtime checks are hints, not content
+hashes or proof that a test result still applies.
+
+## Inspect local history
+
+```bash
+# Search conversations, tool arguments/results, and execution logs
+codesm memory search "token refresh"
+codesm memory search "pytest" --session SESSION_ID
+codesm memory search "auth.py" --directory /path/to/project
+
+# Read a returned record ID; follow next_offset for more of a large record
+codesm memory read 42
+codesm memory read 42 --offset 12000
+
+# Refresh the index from saved session JSON and event logs
+codesm memory reindex
+```
+
+Existing sessions and execution logs are imported once for each project. Indexing
+reads codesm's saved records; it does not crawl the repository. `reindex` can import
+records created by an older codesm process after the initial migration.
+
+## Add persistent notes
+
+```bash
+codesm memory add "Use pytest for this project" --type preference
+codesm memory add "Prefer concise explanations" --type preference --global
 codesm memory list
-
-# List project-specific memories only
-codesm memory list --project
-
-# List global memories only
-codesm memory list --global
-```
-
-### Add Memory
-
-```bash
-# Add a preference
-codesm memory add "Use type hints in all Python code" --type preference
-
-# Add a global memory
-codesm memory add "Prefer functional style" --type preference --global
-
-# Add a solution
-codesm memory add "Fixed rate limiting with Redis cache" --type solution
-```
-
-### Delete Memory
-
-```bash
-# Delete by ID (shown in list output)
-codesm memory forget abc12345
-```
-
-### Clear Memories
-
-```bash
-# Clear project memories
+codesm memory forget MEMORY_ID
 codesm memory clear --project
-
-# Clear global memories
-codesm memory clear --global
-
-# Clear all memories
-codesm memory clear --all
 ```
 
----
+Notes are loaded into the continuation brief automatically. `memory clear` and
+`memory forget` manage these explicit notes; they do not erase session history.
+Delete a saved session to remove its transcript, todos, execution log, and indexed
+records. No automatic retention expiry is applied to saved history.
 
-## Automatic Memory Extraction
+## Local storage
 
-codesm can automatically extract learnings from successful sessions:
-
-1. When a session includes file changes (patches)
-2. When you explicitly ask to remember something
-3. At the end of successful task completions
-
-### Trigger Extraction
-
-In the TUI, use:
-
-```bash frame="none"
-/remember
-```
-
-Or programmatically:
-
-```python
-session = Session.load(session_id)
-memories = await session.extract_memories()
-```
-
----
-
-## How Memory Works
-
-### Storage
-
-Memories are stored as JSON:
-
-```
+```text
 ~/.local/share/codesm/
-├── memory/
-│   ├── global/
-│   │   └── items.json          # Global memories
-│   └── project/
-│       └── <project-id>/
-│           └── items.json      # Project-specific memories
+├── session/<session-id>.json       # Complete transcript and working checkpoint
+├── todo/<session-id>.json          # Task list
+├── events/<session-id>.jsonl       # Execution events, including nested tools
+└── memory/
+    ├── history.sqlite3            # Project-scoped SQLite full-text index
+    ├── global/items.json          # Explicit global notes
+    └── project/<project-id>/items.json
 ```
 
-### Retrieval
+Set `CODESM_DATA_DIR` to use a different local storage directory. Session writes
+are atomic; the history index uses SQLite transactions. If indexing fails, the
+session JSON remains available for recovery and reindexing.
 
-When you start a conversation, codesm:
-
-1. Loads relevant memories (global + project)
-2. Embeds your query using OpenAI embeddings
-3. Finds semantically similar memories
-4. Injects relevant ones into the prompt
-
-### Memory Item Structure
-
-```json
-{
-  "id": "abc12345",
-  "type": "preference",
-  "text": "Use pytest over unittest",
-  "project_id": null,
-  "tags": ["testing", "python"],
-  "created_at": "2024-01-15T10:30:00",
-  "usefulness": 0.8
-}
-```
-
----
-
-## Best Practices
-
-### What to Remember
-
-✅ Good memories:
-- Coding style preferences
-- Project-specific conventions
-- Solutions to recurring problems
-- Tool preferences
-
-❌ Avoid storing:
-- Secrets or API keys
-- Temporary workarounds
-- Context-specific decisions
-
-### Memory Hygiene
-
-- Periodically review memories with `codesm memory list`
-- Remove outdated memories with `codesm memory forget`
-- Keep memories concise and actionable
-
----
-
-## Configuration
-
-Memory can be configured in `~/.config/codesm/config.json`:
-
-```json
-{
-  "memory": {
-    "enabled": true,
-    "auto_extract": false,
-    "max_items_per_project": 500,
-    "max_global_items": 200
-  }
-}
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `enabled` | `true` | Enable/disable memory system |
-| `auto_extract` | `false` | Auto-extract memories from sessions |
-| `max_items_per_project` | `500` | Max memories per project |
-| `max_global_items` | `200` | Max global memories |
+Stored text can contain private code or secrets printed by tools. The archive is
+local and unencrypted. Indexing does not upload it; relevant excerpts and working
+history are sent to the provider you choose as part of its model context. Local
+history covers codesm activity, not unrelated terminal sessions or system logs.

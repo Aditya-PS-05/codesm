@@ -120,7 +120,7 @@ class OrchestrateTool(Tool):
         summary = orchestrator.get_summary()
         
         output_parts = [
-            f"## Orchestration Complete",
+            "## Orchestration Complete" if summary["completed"] == total_tasks else "Error: Orchestration incomplete",
             f"",
             f"**Summary:** {summary['completed']} completed, {summary['failed']} failed, {summary['cancelled']} cancelled",
             f"**Total Duration:** {summary['total_duration']:.1f}s",
@@ -245,14 +245,14 @@ class PipelineTool(Tool):
             try:
                 await orchestrator.spawn(task)
                 previous_result = task.result
-                results.append((step["description"], task))
+                results.append((step.get("description", f"Step {i}"), task))
             except Exception as e:
-                results.append((step["description"], task))
+                results.append((step.get("description", f"Step {i}"), task))
                 break  # Stop pipeline on failure
         
         # Build output
         output_parts = [
-            "## Pipeline Complete",
+            "## Pipeline Complete" if len(results) == len(steps) and all(t.status == SubAgentStatus.COMPLETED for _, t in results) else "Error: Pipeline incomplete",
             "",
         ]
         

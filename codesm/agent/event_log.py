@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+from codesm.storage.storage import Storage
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,7 @@ class EventLogger:
         self.memory_sink = memory_sink
 
         if events_dir is None:
-            events_dir = DEFAULT_EVENTS_DIR
+            events_dir = Storage.BASE_DIR / "events"
         self.events_dir = Path(events_dir)
         self.path = self.events_dir / f"{session_id}.jsonl"
 
@@ -64,9 +66,16 @@ class EventLogger:
 
         try:
             with open(self.path, "a") as f:
+                self.path.chmod(0o600)
                 f.write(json.dumps(event, default=str) + "\n")
         except OSError as e:
             logger.warning(f"Could not write event to {self.path}: {e}")
+
+        try:
+            from codesm.memory.history import HistoryStore
+            HistoryStore().record_event(self.session_id, event)
+        except (OSError, sqlite3.Error) as error:
+            logger.warning("Could not index history event: %s", error)
 
         return event
 
@@ -126,7 +135,7 @@ class EventLogger:
     ) -> list[dict]:
         """Load all events for a session from the JSONL file."""
         if events_dir is None:
-            events_dir = DEFAULT_EVENTS_DIR
+            events_dir = Storage.BASE_DIR / "events"
         path = Path(events_dir) / f"{session_id}.jsonl"
         if not path.exists():
             return []

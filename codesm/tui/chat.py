@@ -1,15 +1,17 @@
-"""Chat view for the TUI - Terminal-inspired style with rich formatting"""
+"""Plain transcript messages with rich formatting and copy support."""
 
 import re
 from textual.widgets import Static, Input, Label
 from textual.containers import VerticalScroll, Vertical, Horizontal
 from textual import events
 from textual.reactive import reactive
+from textual.content import Content
 from rich.markdown import Markdown, MarkdownContext, Heading
 from rich.text import Text
 from rich.style import Style
-from rich.console import Group
+from rich.console import Console, Group
 from rich.panel import Panel
+from markdown_it import MarkdownIt
 
 # Color constants matching Amp/OpenCode reference design  
 YELLOW = "#eed49f"  # Keywords, patterns, inline code (softer gold)
@@ -65,12 +67,19 @@ def render_diff_block(diff_content: str) -> Text:
 class ThemedMarkdown(Markdown):
     """Markdown with themed link colors, styled headers, and keyword highlighting"""
     
-    LINK_COLOR = "#5dd9c1"
+    LINK_COLOR = "#6c71c4"
     
-    def __init__(self, markup: str, **kwargs):
+    def __init__(self, markup: str, *, link_color: str = LINK_COLOR, **kwargs):
         super().__init__(markup, hyperlinks=True, **kwargs)
+        self.link_color = link_color
         self.style_stack = []
         self.original_markup = markup
+        self._visual_content = None
+
+    def visualize(self):
+        if self._visual_content is None:
+            self._visual_content = MarkdownContent(self)
+        return self._visual_content
     
     def _set_link_style(self):
         """Override the link style in the style lookup"""
@@ -123,29 +132,45 @@ class ThemedMarkdown(Markdown):
         # Theme matching Amp/OpenCode style
         themed_console = Console(
             theme=Theme({
-                "markdown.link": f"{CYAN}",
-                "markdown.link_url": f"dim {CYAN}",
+                "markdown.link": f"underline {self.link_color}",
+                "markdown.link_url": f"underline {self.link_color}",
                 "markdown.code": f"{YELLOW}",
                 "markdown.code_block": f"{WHITE}",
-                "markdown.strong": f"bold {STRONG}",
-                "markdown.emph": f"italic {WHITE}",
+                "markdown.strong": "bold",
+                "markdown.emph": "italic",
                 "markdown.item.bullet": f"{DIM}",
                 "markdown.item.number": f"{DIM}",
                 "markdown.block_quote": f"italic {DIM}",
                 "markdown.hr": f"{DIM}",
             }),
             force_terminal=True,
+            color_system="truecolor",
             width=options.max_width,
+            height=options.size.height,
         )
         
+        markdown = Markdown(processed, hyperlinks=True, code_theme="monokai")
+        if "file:" in processed.lower():
+            parser = MarkdownIt().enable("strikethrough").enable("table")
+            validate_link = parser.validateLink
+            parser.validateLink = lambda url: url.lower().startswith("file:///") or validate_link(url)
+            markdown.parsed = parser.parse(processed)
+
         with themed_console.capture() as capture:
-            themed_console.print(Markdown(processed, hyperlinks=True, code_theme="monokai"))
+            themed_console.print(markdown)
         
         result = Text.from_ansi(capture.get())
+        result.rstrip()
         
         # Post-process to highlight file paths and restore header colors
         result = self._highlight_paths(result)
         result = self._colorize_headers(result, headers)
+        for span in tuple(result.spans):
+            if isinstance(span.style, Style) and span.style.link:
+                result.stylize(Style(
+                    color="default" if themed_console.no_color else self.link_color,
+                    underline=True, dim=False,
+                ), span.start, span.end)
         
         return result
     
@@ -248,21 +273,59 @@ class ThemedMarkdown(Markdown):
         return text
 
 
-def styled_markdown(content: str, link_color: str = "#5dd9c1") -> ThemedMarkdown:
+class MarkdownContent(Content):
+    """Keep Markdown layout while using Textual's native selection and offsets."""
+
+    def __init__(self, markdown: ThemedMarkdown):
+        super().__init__("")
+        self.markdown = markdown
+        self._width = 0
+        self._rendered = Content("")
+        self._painted = Content("")
+
+    def _at_width(self, width: int) -> Content:
+        width = max(1, width)
+        if width != self._width:
+            console = Console(width=width)
+            text = Text.assemble(*(
+                (segment.text, segment.style)
+                for segment in console.render(self.markdown)
+                if not segment.control
+            ))
+            text.rstrip()
+            self._rendered = Content.from_rich_text(text, console=console)
+            self._width = width
+        return self._rendered
+
+    def __str__(self) -> str:
+        # Measurement may use a different width from the last painted selection.
+        return str(self._painted)
+
+    def get_optimal_width(self, rules, container_width: int) -> int:
+        return self._at_width(container_width).get_optimal_width(rules, container_width)
+
+    def get_height(self, rules, width: int) -> int:
+        return self._at_width(width).get_height(rules, width)
+
+    def render_strips(self, width, height, style, options):
+        self._painted = self._at_width(width)
+        return self._painted.render_strips(width, height, style, options)
+
+
+def styled_markdown(content: str, link_color: str = ThemedMarkdown.LINK_COLOR) -> ThemedMarkdown:
     """Create Markdown with themed link styling"""
-    ThemedMarkdown.LINK_COLOR = link_color
-    return ThemedMarkdown(content)
+    return ThemedMarkdown(content, link_color=link_color)
 
 
 from datetime import datetime
 
-from .clipboard import SelectableMixin
+from .clipboard import SelectableStatic
 
 
-class UserMessage(SelectableMixin, Static):
+class UserMessage(SelectableStatic):
     """User message with clean, minimal styling.
     
-    Click on message, then press 'c' to copy. Or right-click for menu.
+    Drag to select text, or focus and press 'c' to copy the message.
     """
 
     can_focus = True
@@ -271,20 +334,13 @@ class UserMessage(SelectableMixin, Static):
     UserMessage {
         height: auto;
         margin: 1 0 0 0;
-        padding: 0;
-    }
-
-    UserMessage:focus {
-        border-left: heavy $secondary;
-    }
-
-    UserMessage > .user-content {
-        padding: 1 2;
+        padding: 0 1;
         background: $surface;
     }
 
-    UserMessage > .user-content:hover {
-        background: $panel;
+    UserMessage > .user-content {
+        height: auto;
+        padding: 0;
     }
     
     UserMessage .user-text {
@@ -300,23 +356,16 @@ class UserMessage(SelectableMixin, Static):
         super().__init__(**kwargs)
         self.content = content
         self.timestamp = timestamp or datetime.now()
-        self.border_title = ""
-        self.styles.border = ("heavy", "left")
-        self.styles.border_left = ("heavy", "$secondary")
 
     def compose(self):
         with Vertical(classes="user-content"):
-            yield Static(self.content, classes="user-text")
-            yield Static(
-                f"[dim]You · {self.timestamp.strftime('%H:%M')}[/dim]",
-                classes="message-meta"
-            )
+            yield Static(Text(f"› {self.content}"), classes="user-text")
 
 
-class AssistantMessage(SelectableMixin, Static):
+class AssistantMessage(SelectableStatic):
     """Assistant message with rich formatting and keyword highlighting.
     
-    Click on message, then press 'c' to copy. Or right-click for menu.
+    Drag to select text, or focus and press 'c' to copy the message.
     """
 
     can_focus = True
@@ -325,7 +374,7 @@ class AssistantMessage(SelectableMixin, Static):
     AssistantMessage {
         height: auto;
         margin: 1 0 0 0;
-        padding: 1 2;
+        padding: 0 1;
     }
 
     AssistantMessage:focus {
@@ -350,20 +399,13 @@ class AssistantMessage(SelectableMixin, Static):
         self.duration = duration
 
     def compose(self):
-        # Use enhanced styled markdown for rich formatting
         yield Static(styled_markdown(self.content))
-        meta_parts = [f"[{CYAN}]▣[/]", "[dim]Assistant[/dim]"]
-        if self.model:
-            meta_parts.append(f"[dim]· {self.model}[/dim]")
-        if self.duration:
-            meta_parts.append(f"[dim]· {self.duration:.1f}s[/dim]")
-        yield Static(" ".join(meta_parts), classes="message-meta")
 
 
-class ChatMessage(SelectableMixin, Static):
-    """Legacy chat message for compatibility.
+class ChatMessage(SelectableStatic):
+    """A compact transcript message.
     
-    Click on message, then press 'c' to copy. Or right-click for menu.
+    Drag to select text, or focus and press 'c' to copy the message.
     """
 
     can_focus = True
@@ -372,7 +414,7 @@ class ChatMessage(SelectableMixin, Static):
     ChatMessage {
         height: auto;
         margin: 1 0 0 0;
-        padding: 1 2;
+        padding: 0 1;
     }
 
     ChatMessage:focus {
@@ -380,12 +422,14 @@ class ChatMessage(SelectableMixin, Static):
     }
 
     ChatMessage.user {
-        border-left: heavy #5dd9c1;
-        background: $surface;
+        width: 100%;
+        background: $foreground 10%;
+        padding: 1 1;
     }
 
-    ChatMessage.user:hover {
-        background: $panel;
+    ChatMessage.user:ansi {
+        background: #3a3a3a;
+        color: #f5f5f5;
     }
 
     ChatMessage.assistant {
@@ -402,15 +446,9 @@ class ChatMessage(SelectableMixin, Static):
 
     def compose(self):
         if self.role == "user":
-            yield Static(self.content)
-            yield Static("[dim]You[/dim]", classes="message-meta")
+            yield Static(Text(f"› {self.content}"))
         else:
             yield Static(styled_markdown(self.content))
-            meta_parts = ["[#5dd9c1]▣[/]", "[dim]Assistant[/dim]"]
-            if self.tools_used:
-                tools_str = ", ".join(self.tools_used)
-                meta_parts.append(f"[dim]· used {tools_str}[/dim]")
-            yield Static(" ".join(meta_parts), classes="message-meta")
 
 
 class ContextSidebar(Static):
@@ -479,15 +517,15 @@ class ContextSidebar(Static):
                 yield Static(f"[dim]{self.working_dir}[/dim]", id="working-dir")
                 yield Static(f"[dim]{self.version}[/dim]", id="version-info")
 
-    def update_context(self, tokens: int, context_pct: int, cost: float):
+    def update_context(self, tokens: int, context_pct: int, cost: float | None, *, estimated: bool = False):
         """Update context information"""
         self.tokens = tokens
         self.context_pct = context_pct
-        self.cost = cost
+        self.cost = cost or 0
         try:
-            self.query_one("#token-count", Static).update(f"{tokens:,} tokens")
-            self.query_one("#context-pct", Static).update(f"{context_pct}% used")
-            self.query_one("#cost-display", Static).update(f"${cost:.2f} spent")
+            self.query_one("#token-count", Static).update(f"{tokens:,} tokens" + (" (estimated)" if estimated else ""))
+            self.query_one("#context-pct", Static).update(f"~{context_pct}% transcript estimate")
+            self.query_one("#cost-display", Static).update("Cost unknown" if cost is None else f"~${cost:.4f} cost")
         except Exception:
             pass
 

@@ -59,6 +59,15 @@ class EvalReport:
     # Agent configuration
     provider: str = ""
     model: str = ""
+    variant: str = "adaptive"
+    repetition: int = 1
+    completion_status: str = "unknown"
+    requests: int = 0
+    cost_usd: float | None = 0.0
+    estimated_requests: int = 0
+    unpriced_requests: int = 0
+    subagents: int = 0
+    subagent_statuses: dict[str, int] = field(default_factory=dict)
 
     # Token counts (best effort — some providers do not expose them)
     tokens_in: int = 0
@@ -106,13 +115,13 @@ class EvalReport:
 
     @property
     def assertions_passed(self) -> bool:
-        """True if every assertion exited 0. Empty assertion list counts as passed."""
-        return all(a.passed for a in self.assertions)
+        """True if every assertion exited 0. Empty assertion lists cannot establish success."""
+        return bool(self.assertions) and all(a.passed for a in self.assertions)
 
     @property
     def passed(self) -> bool:
         """Overall pass/fail verdict."""
-        return self.setup_ok and self.agent_ok and self.assertions_passed and self.error is None
+        return self.setup_ok and self.agent_ok and not self.max_iterations_hit and self.assertions_passed and self.error is None
 
     @property
     def compaction_tokens_dropped(self) -> int:

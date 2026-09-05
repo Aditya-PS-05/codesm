@@ -1,0 +1,45 @@
+name: runtime-ordering
+description: Regression derived from Codesm's tool scheduler. A read after a write must observe that write.
+setup:
+  - |
+    cat > scheduler.py <<'PY'
+    import asyncio
+    async def execute_all(calls):
+        return await asyncio.gather(*(call() for call in calls))
+    PY
+  - |
+    cat > store.py <<'PY'
+    import asyncio
+    class Store:
+        value = 'old'
+        async def write(self):
+            await asyncio.sleep(.01)
+            self.value = 'new'
+            return self.value
+        async def read(self):
+            return self.value
+    PY
+  - |
+    cat > test_ordering.py <<'PY'
+    import asyncio
+    import unittest
+    from scheduler import execute_all
+    from store import Store
+    class Ordering(unittest.TestCase):
+        def test_read_observes_preceding_write(self):
+            store = Store()
+            self.assertEqual(asyncio.run(execute_all([store.write, store.read])), ['new', 'new'])
+        def test_empty(self):
+            self.assertEqual(asyncio.run(execute_all([])), [])
+    PY
+prompt: |
+  The tool scheduler sometimes reads stale data immediately after writing it.
+  Run python3 -m unittest test_ordering -q to reproduce. Fix scheduler.py so
+  dependent operations keep their order and return values in call order.
+  Do not change store.py or test_ordering.py. Prefer the smallest correct fix.
+assertion:
+  - python3 -m unittest test_ordering -q
+protected_files: [store.py, test_ordering.py]
+debug: true
+max_iterations: 20
+timeout: 180
