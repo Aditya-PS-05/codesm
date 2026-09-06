@@ -1,10 +1,13 @@
 // @ts-check
 import { defineConfig } from "astro/config"
+import { unified } from "@astrojs/markdown-remark"
 import starlight from "@astrojs/starlight"
 import mermaid from "astro-mermaid"
 import config from "./config.mjs"
 
 export default defineConfig({
+  compressHTML: true,
+  markdown: { processor: unified() },
   site: config.url,
   base: "/docs",
   devToolbar: {

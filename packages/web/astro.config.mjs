@@ -3,6 +3,7 @@ import { defineConfig } from "astro/config"
 import config from "./config.mjs"
 
 export default defineConfig({
+  compressHTML: true,
   site: config.url,
   devToolbar: {
     enabled: false,

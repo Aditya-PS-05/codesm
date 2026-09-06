@@ -6,22 +6,20 @@ This is the documentation site for codesm, built with [Astro](https://astro.buil
 
 ### Prerequisites
 
-- Node.js 18+ or Bun
+- Node.js 22.12.0 or newer
+- pnpm 10.34.5 (the version pinned in `package.json`)
 
 ### Install Dependencies
 
 ```bash
-npm install
-# or
-bun install
+corepack enable
+pnpm install --frozen-lockfile
 ```
 
 ### Start Development Server
 
 ```bash
-npm run dev
-# or
-bun dev
+pnpm dev
 ```
 
 The site will be available at `http://localhost:4321/docs/`.
@@ -29,19 +27,19 @@ The site will be available at `http://localhost:4321/docs/`.
 ### Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ### Preview Production Build
 
 ```bash
-npm run preview
+pnpm preview
 ```
 
 ## Structure
 
 ```
-docs-site/
+packages/docs/
 ├── src/
 │   ├── content/
 │   │   └── docs/           # Documentation pages (.mdx)

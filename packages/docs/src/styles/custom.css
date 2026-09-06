@@ -41,7 +41,6 @@ body {
 }
 
 /* Dark mode - supports both system preference and theme toggle */
-:root[data-theme="dark"],
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --sl-color-bg: hsl(0, 9%, 7%);
@@ -96,7 +95,7 @@ body {
   --color-icon: hsl(10, 3%, 43%);
 }
 
-.header:where(.astro-tcroauqe) {
+.header {
   border-bottom: 1px solid var(--color-border-weak) !important;
 }
 
@@ -235,13 +234,6 @@ body > .page > header button[data-open-modal] {
   border: 1px solid var(--color-border-weak) !important;
   padding: 6px 12px !important;
   border-radius: 4px;
-}
-
-:root[data-theme="dark"] body > .page > header button[data-open-modal],
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) body > .page > header button[data-open-modal] {
-    background: var(--color-background-weak);
-  }
 }
 
 site-search > button span {

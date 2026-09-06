@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace as NS
 
 import httpx
+import httpx2
 import pytest
 from typer.testing import CliRunner
 
@@ -139,13 +140,13 @@ async def test_sdk_discovery_filters_non_chat_models_and_closes_client(monkeypat
 
     def response(request):
         paths.append(request.url.path)
-        return httpx.Response(200, json={"object": "list", "data": [
+        return httpx2.Response(200, json={"object": "list", "data": [
             {"id": "gpt-future", "object": "model", "created": 0, "owned_by": "openai"},
             {"id": "gpt-image-2", "object": "model", "created": 0, "owned_by": "openai"},
             {"id": "text-embedding-3-small", "object": "model", "created": 0, "owned_by": "openai"},
         ]})
 
-    client = openai.AsyncOpenAI(api_key="fixture", http_client=httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    client = openai.AsyncOpenAI(api_key="fixture", http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(response)))
     monkeypatch.setattr("codesm.provider.openai.OpenAIProvider._create_client", lambda self: client)
     entries = await _fetch_models("openai", Config())
     assert [entry["id"] for entry in entries] == ["openai/gpt-future"]
