@@ -33,6 +33,8 @@ class ModelPrice(BaseModel):
 
 
 class Config(BaseModel):
+    backend: Literal["native", "claude-code", "codex", "claude-science"] = "native"
+    backend_models: dict[str, str] = Field(default_factory=dict)
     model: str = "anthropic/claude-sonnet-5"
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     agents: dict[str, AgentConfig] = Field(default_factory=dict)

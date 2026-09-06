@@ -455,7 +455,7 @@ THEME_LIST = []  # Ordered list for cycling
 for category, definitions in THEME_DEFINITIONS.items():
     is_dark = category != "Light"
     for definition in definitions:
-        theme = (BUILTIN_THEMES["textual-ansi"] if definition["name"] == "terminal"
+        theme = (BUILTIN_THEMES["ansi-dark"] if definition["name"] == "terminal"
                  else _create_theme(definition, dark=is_dark))
         THEMES[definition["name"]] = theme
         THEME_LIST.append({

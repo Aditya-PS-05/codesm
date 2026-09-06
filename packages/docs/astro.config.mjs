@@ -40,7 +40,7 @@ export default defineConfig({
         "troubleshooting",
         {
           label: "Usage",
-          items: ["tui", "cli", "modes", "sessions", "branching", "tools-usage"],
+          items: ["tui", "cli", "backends", "modes", "sessions", "branching", "tools-usage"],
         },
         {
           label: "Configure",

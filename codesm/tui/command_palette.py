@@ -14,6 +14,7 @@ COMMANDS = [
     {"cmd": "/fork", "desc": "fork session to explore alternative"},
     {"cmd": "/branches", "desc": "list session branches"},
     {"cmd": "/models", "desc": "list models"},
+    {"cmd": "/backend", "desc": "switch between codesm, Claude Code, and Codex"},
     {"cmd": "/mode", "desc": "switch mode (smart/rush)"},
     {"cmd": "/rush", "desc": "rush mode - fast & cheap"},
     {"cmd": "/smart", "desc": "smart mode - full capability"},
@@ -122,9 +123,10 @@ class CommandPaletteModal(ModalScreen):
         Binding("enter", "select", "Run", show=False, priority=True),
     ]
 
-    def __init__(self, initial_text: str = "/"):
+    def __init__(self, initial_text: str = "/", commands: list[dict] | None = None):
         super().__init__()
         self.initial_text = initial_text
+        self.commands = COMMANDS if commands is None else commands
         self.selected_index = 0
         self.visible_items: list[CommandItem] = []
 
@@ -132,7 +134,7 @@ class CommandPaletteModal(ModalScreen):
         with Vertical(id="palette-container"):
             yield Input(value=self.initial_text, id="palette-input")
             with VerticalScroll(id="commands-list"):
-                for cmd_info in COMMANDS:
+                for cmd_info in self.commands:
                     yield CommandItem(cmd_info["cmd"], cmd_info["desc"])
             yield Static("↑↓ select · enter run · esc close", id="palette-hint")
 

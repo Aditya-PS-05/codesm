@@ -5,6 +5,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
+from textual import events
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Input
 from textual.widgets._input import Selection as InputSelection
@@ -18,7 +19,7 @@ from codesm.session.session import Session
 from codesm.tui.app import CodesmApp
 from codesm.tui.chat import ChatMessage
 from codesm.tui.modals import ModelSelectModal
-from codesm.tui.tools import StreamingTextWidget
+from codesm.tui.tools import StreamingTextWidget, ToolTreeWidget
 
 
 REPLY = (
@@ -29,10 +30,11 @@ REPLY = (
 
 
 class LayoutAgent:
-    def __init__(self, directory, model, session=None):
+    def __init__(self, directory, model=None, session=None, backend=None, ask_user=None):
         self.directory = directory
-        self.model = model
-        self.config = Config(model=model)
+        self.model = self._model = model or "openai/fixture"
+        self.backend = backend or "native"
+        self.config = Config(model=self.model)
         self.profile = None
         self.session = session or Session.create(directory)
         self.stats = UsageStats()
@@ -109,6 +111,9 @@ async def test_native_theme_preserves_terminal_foreground_and_background(tmp_pat
         title = next(segment for segment in app.console.render(update) if "codesm ·" in segment.text)
         assert title.style.color.is_default
         assert title.style.bgcolor.is_default
+        app.theme = "codesm-dark"
+        await pilot.pause()
+        assert not app.native_ansi_color
 
 
 @pytest.mark.asyncio
@@ -211,8 +216,8 @@ async def test_copy_selection_preserves_running_task_and_unselected_ctrl_c_inter
         await pilot.hover(response, offset=(inset.x, inset.y))
         assert "drag to select" in rendered_lines(app.query_one("#footer-hints"))
         await pilot.mouse_down(response, offset=(inset.x, inset.y))
-        await pilot.hover(response, offset=(inset.x + 6, inset.y))
-        await pilot.mouse_up(response, offset=(inset.x + 6, inset.y))
+        await pilot.hover(response, offset=(inset.x + 5, inset.y))
+        await pilot.mouse_up(response, offset=(inset.x + 5, inset.y))
         assert app.screen.get_selected_text() == "Codesm"
         assert app._mouse_pointer == "text"
         await pilot.press("ctrl+c", "ctrl+shift+c")
@@ -222,6 +227,26 @@ async def test_copy_selection_preserves_running_task_and_unselected_ctrl_c_inter
         await pilot.press("escape")
         assert not app.screen.get_selected_text()
         assert app._chat_worker.is_running
+
+        # A tool may collapse after selection. Ctrl+C must not cancel the task.
+        tool = ToolTreeWidget("system", collapsed=False)
+        index = tool.add_tool("bash", {"command": "printf fixture"})
+        tool.mark_tool_complete(index, "done", "tool evidence")
+        await app.query_one("#messages", Vertical).mount(tool)
+        app.query_one("#chat-container", VerticalScroll).scroll_end(animate=False)
+        await pilot.pause()
+        inset = tool.content_region.offset - tool.region.offset
+        await pilot.mouse_down(tool, offset=(inset.x + 2, inset.y + 1))
+        await pilot.hover(tool, offset=(inset.x + 14, inset.y + 1))
+        await pilot.mouse_up(tool, offset=(inset.x + 14, inset.y + 1))
+        assert app.screen.get_selected_text() == "tool evidence"
+        tool.toggle_collapse()
+        await pilot.pause()
+        await pilot.press("ctrl+c")
+        assert app._chat_worker.is_running
+        assert copied == ["Codesm", "Codesm"]
+        await pilot.press("escape")
+        assert not app.screen.selections
         await pilot.press("ctrl+c")
         await app.workers.wait_for_complete()
         assert not app.agent._chat_active
@@ -233,6 +258,37 @@ async def test_copy_selection_preserves_running_task_and_unselected_ctrl_c_inter
         await pilot.press("ctrl+c")
         assert copied[-1] == "this"
         assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_drag_scroll_during_streaming_does_not_jump_to_latest_output(tmp_path, offline_terminal):
+    app = CodesmApp(tmp_path, "openai/fixture")
+    async with app.run_test(size=(80, 24)) as pilot:
+        app._switch_to_chat()
+        await app.query_one("#messages", Vertical).mount(
+            *(ChatMessage("assistant", f"Earlier result {i}") for i in range(40))
+        )
+        app._get_active_input().value = "Continue the task"
+        await pilot.press("enter")
+        await asyncio.wait_for(app.agent.entered.wait(), 2)
+        await pilot.pause()
+        transcript = app.query_one("#chat-container", VerticalScroll)
+        before = transcript.scroll_y
+        await pilot.mouse_down(transcript, offset=(8, transcript.size.height - 3))
+        point = transcript.region.offset + (8, 0)
+        delta = point - app.mouse_position
+        await app.on_event(events.MouseMove(
+            app.screen, point.x, point.y, delta.x, delta.y,
+            button=1, shift=False, meta=False, ctrl=False,
+            screen_x=point.x, screen_y=point.y,
+        ))
+        await pilot.pause(0.2)
+        assert transcript.scroll_y < before - 2
+        app.query_one(StreamingTextWidget).append_text("\n\nMore live output. " * 10)
+        await pilot.pause(0.2)
+        assert transcript.scroll_y < before - 2
+        assert app.screen.get_selected_text()
+        await pilot.mouse_up(transcript, offset=(8, 0))
 
 
 @pytest.mark.asyncio

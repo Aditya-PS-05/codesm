@@ -100,7 +100,7 @@ class ConnectionApp(CodesmApp):
 
 def connection_app(tmp_path, config):
     app = ConnectionApp(tmp_path, config.model)
-    app.agent = SimpleNamespace(config=config, model=config.model, cleanup=AsyncMock())
+    app.agent = SimpleNamespace(config=config, model=config.model, backend="native", cleanup=AsyncMock())
     return app
 
 

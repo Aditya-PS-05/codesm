@@ -7,6 +7,11 @@ Codesm uses one configuration for the main agent and its specialists. It reads t
 file named by `CODESM_CONFIG`, otherwise `codesm.json` in the selected workspace,
 otherwise `~/.config/codesm/config.json`. The first file found wins; files are not merged.
 
+To run an installed agent, select `backend: "claude-code"`, `"codex"`, or experimental `"claude-science"`.
+The default is `"native"`. `backend_models` sets external CLI model defaults;
+`model` and the native budgets below apply to codesm's own agent loop. See
+[Agent backends](/backends/) for installation, handoffs, and supported controls.
+
 ## Example
 
 ```json title="codesm.json"

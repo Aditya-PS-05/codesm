@@ -29,15 +29,22 @@ class Agent:
         max_iterations: int = 0,  # 0 = unlimited
         mcp_config_path: Path | str | None = None,
         config=None,
+        backend: str | None = None,
+        ask_user=None,
     ):
         self.directory = Path(session.directory if session else directory).resolve()
         from codesm.config import Config
         from codesm.agent.optimizer import CostLatencyOptimizer, Budget
         self.config = config or Config.load(directory=self.directory)
         self.profile = self.config.agents.get("main")
+        selected_backend = backend or (session.backend if session else self.config.backend)
+        from .backends import BACKENDS
+        if selected_backend not in BACKENDS:
+            raise ValueError("Backend must be one of: " + ", ".join(BACKENDS))
+        self.ask_user = ask_user
         self._chat_active = False
         self._retired_providers = []
-        self._model = model or (self.profile.model if self.profile else None) or self.config.model
+        self._model = (model if selected_backend == "native" else None) or (self.profile.model if self.profile else None) or self.config.model
         self.budget = CostLatencyOptimizer(budget=Budget(
             session_limit=self.config.budget_usd if self.config.budget_usd is not None else 5.0,
             daily_limit=float("inf"), hard_limit=self.config.budget_usd is not None))
@@ -45,6 +52,11 @@ class Agent:
         self.budget.max_requests = self.config.max_requests
         self.budget.max_task_tokens = self.config.max_task_tokens
         self.session = session or Session.create(self.directory)
+        self.session.backend = selected_backend
+        self.session.backend_models = {**self.config.backend_models, **self.session.backend_models}
+        if selected_backend != "native" and model:
+            self.session.backend_models[selected_backend] = model
+        self.session.save()
         from codesm.memory.history import HistoryStore
         try:
             HistoryStore().import_project(self.directory)
@@ -54,8 +66,10 @@ class Agent:
         self._restore_budget()
         self.max_iterations = max_iterations or (self.profile.max_iterations if self.profile else 0)
         self.tools = ToolRegistry()
-        self.provider = get_provider(self._model, self.config)
-        self._configure_provider()
+        self.provider = None
+        if selected_backend == "native":
+            self.provider = get_provider(self._model, self.config)
+            self._configure_provider()
         self.react_loop = ReActLoop(max_iterations=self.max_iterations)
         
         # MCP support - will be initialized on first chat
@@ -86,8 +100,30 @@ class Agent:
         self._event_logger: EventLogger = EventLogger(session_id=self.session.id)
 
     @property
+    def backend(self) -> str:
+        return self.session.backend
+
+    @backend.setter
+    def backend(self, value: str):
+        from .backends import availability
+        if self._chat_active:
+            raise RuntimeError("Finish or cancel the active task before switching backends")
+        problem = availability(value)
+        if problem:
+            raise ValueError(problem)
+        if value == "native" and self.provider is None:
+            self.provider = get_provider(self._model, self.config)
+            self._configure_provider()
+        previous = self.backend
+        self.session.backend = value
+        self.session.save()
+        self._event_logger.emit("backend_changed", previous=previous, backend=value)
+
+    @property
     def model(self) -> str:
         """Get current model"""
+        if self.backend != "native":
+            return self.session.backend_models.get(self.backend) or "default"
         return self._model
 
     @model.setter
@@ -95,6 +131,10 @@ class Agent:
         """Set model and recreate provider"""
         if self._chat_active:
             raise RuntimeError("Finish or cancel the active task before switching models")
+        if self.backend != "native":
+            self.session.backend_models[self.backend] = value
+            self.session.save()
+            return
         provider = get_provider(value, self.config)
         previous = self._model
         self._model = value
@@ -152,6 +192,7 @@ class Agent:
     
     async def chat(self, message: str) -> AsyncIterator[StreamChunk]:
         from contextlib import aclosing
+        from .backends import checkout_lock
         if self._chat_active:
             raise RuntimeError("This agent already has an active task")
         self._chat_active = True
@@ -161,11 +202,14 @@ class Agent:
                 if hasattr(provider, "close"):
                     await provider.close()
             self._retired_providers.clear()
-            async with aclosing(self._chat(message)) as stream:
-                async for chunk in stream:
-                    if chunk.type == "run_status":
-                        session.run_state["status"] = chunk.content
-                    yield chunk
+            if self._event_logger.session_id != session.id:
+                self._event_logger = EventLogger(session_id=session.id)
+            with checkout_lock(self.directory):
+                async with aclosing(self._chat(message)) as stream:
+                    async for chunk in stream:
+                        if chunk.type == "run_status":
+                            session.run_state["status"] = chunk.content
+                        yield chunk
         except BaseException as error:
             import asyncio
             status = "interrupted" if isinstance(error, (asyncio.CancelledError, GeneratorExit)) else "failed"
@@ -181,6 +225,14 @@ class Agent:
     async def _chat(self, message: str) -> AsyncIterator[StreamChunk]:
         self._restore_budget()
         session = self.session
+        if self.backend != "native":
+            from contextlib import aclosing
+            from .backends import stream_backend
+            session.add_message(role="user", content=message)
+            async with aclosing(stream_backend(self, message)) as stream:
+                async for chunk in stream:
+                    yield chunk
+            return
         if message == "/debug off":
             session.debug_state = {}
             session.save()
@@ -302,21 +354,27 @@ class Agent:
         if self._budget_session == self.session.id:
             return
         from codesm.agent.optimizer import UsageRecord
+        from .backends import BACKENDS
         self.budget.reset_session()
         for fields in self.session.usage_records:
             record = UsageRecord(**fields)
             self.budget._session_usage.append(record)
             self.budget._session_cost += record.cost
             self.budget._model_stats[record.model].add(record)
-            self.budget._requests += 1
-            self.budget._tokens += record.input_tokens + record.output_tokens
+            if record.task_type not in BACKENDS or record.task_type == "native":
+                self.budget._requests += 1
+                self.budget._tokens += record.input_tokens + record.output_tokens
         self._budget_session = self.session.id
 
     def new_session(self):
         """Start a new session"""
         if self._chat_active:
             raise RuntimeError("Cancel or finish the active task before starting a new session")
+        backend, models = self.backend, dict(self.session.backend_models)
         self.session = Session.create(self.directory)
+        self.session.backend = backend
+        self.session.backend_models = models
+        self.session.save()
         self._restore_budget()
         self.skills.clear()  # Clear loaded skills for new session
     

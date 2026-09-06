@@ -88,7 +88,7 @@ async def _run(task, workdir, config, task_file, model_override):
     agent = None
     started = time.monotonic()
     try:
-        agent = Agent(directory=workdir, model=report.model, config=config, max_iterations=task.max_iterations,
+        agent = Agent(directory=workdir, model=report.model, config=config, max_iterations=task.max_iterations, backend="native",
                       mcp_config_path=workdir / "mcp-servers.json")
         set_diff_preview_enabled(False, agent.session.id)
         agent._eval_events, agent._eval_usage = events, usage

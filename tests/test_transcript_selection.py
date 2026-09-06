@@ -4,12 +4,18 @@ import pytest
 from rich.cells import cell_len
 from textual import events
 from textual.app import App
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Static
 
 from codesm.tui.chat import ChatMessage
+from codesm.tui.clipboard import TranscriptScreen
 from codesm.tui.tools import StreamingTextWidget, ToolTreeWidget
 
 
 class SelectionApp(App):
+    def get_default_screen(self):
+        return TranscriptScreen()
+
     def __init__(self, message):
         super().__init__()
         self.message = message
@@ -24,7 +30,7 @@ def text_span(widget, text):
         line = widget.render_line(y).text
         if text in line:
             x = inset.x + cell_len(line[:line.index(text)])
-            return (x, inset.y + y), (x + cell_len(text), inset.y + y)
+            return (x, inset.y + y), (x + cell_len(text) - 1, inset.y + y)
     raise AssertionError(f"{text!r} is not visible")
 
 
@@ -34,6 +40,17 @@ async def drag(pilot, widget, start, end):
     await pilot.mouse_up(widget, offset=end)
     # Pilot bypasses App.on_event, which emits a release click in a real terminal.
     await pilot._post_mouse_events([events.Click], widget, offset=end, button=1)
+
+
+async def drag_to(pilot, widget, offset):
+    # Pilot.hover supplies delta_y=0, which deliberately does not start scrolling.
+    point = widget.region.offset + offset
+    delta = point - pilot.app.mouse_position
+    await pilot.app.on_event(events.MouseMove(
+        pilot.app.screen, point.x, point.y, delta.x, delta.y,
+        button=1, shift=False, meta=False, ctrl=False,
+        screen_x=point.x, screen_y=point.y,
+    ))
 
 
 def highlighted_text(widget):
@@ -146,3 +163,107 @@ async def test_dragging_expanded_tool_output_keeps_it_open(monkeypatch):
 
         await pilot.click(message, offset=start)
         assert message._collapsed
+
+
+@pytest.mark.asyncio
+async def test_selection_across_tool_and_blank_space_has_valid_text_offsets():
+    tool = ToolTreeWidget("system", collapsed=False)
+    index = tool.add_tool("bash", {"command": "printf evidence"})
+    tool.mark_tool_complete(index, "done", "tool evidence")
+    after = ChatMessage("assistant", "Later answer to select.")
+
+    class BlankSpaceApp(App):
+        CSS = "#padding { height: 8; } #gap { height: 3; }"
+
+        def compose(self):
+            yield Static("", id="padding")
+            yield tool
+            yield Static("", id="gap")
+            yield after
+
+    app = BlankSpaceApp()
+    async with app.run_test(size=(80, 30)) as pilot:
+        await pilot.pause()
+        body = after.children[0]
+        await pilot.mouse_down(body, offset=text_span(body, "Later answer to select.")[1])
+        await pilot.hover(tool, offset=text_span(tool, "tool evidence")[0])
+        await pilot.hover("#gap", offset=(2, 1))
+        await pilot.mouse_up("#gap", offset=(2, 1))
+        # Leaving the tool must not turn its screen y-coordinate into a text line.
+        assert "Later answer" in app.screen.get_selected_text()
+
+
+@pytest.mark.asyncio
+async def test_drag_autoscroll_keeps_offscreen_text_and_stops_on_release():
+    messages = [ChatMessage("assistant", f"Evidence line {index:03d}.") for index in range(60)]
+
+    class ScrollSelectionApp(App):
+        SELECT_AUTO_SCROLL_SPEED = 80
+
+        def compose(self):
+            with VerticalScroll(id="transcript"):
+                yield from messages
+
+    app = ScrollSelectionApp()
+    async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        transcript = app.query_one("#transcript", VerticalScroll)
+        first = messages[0].children[0]
+        await pilot.mouse_down(first, offset=text_span(first, "Evidence")[0])
+        await drag_to(pilot, transcript, (12, 19))
+        await pilot.pause(0.5)
+        assert transcript.scroll_y > 5
+        selected = app.screen.get_selected_text()
+        assert "Evidence line 000." in selected
+        assert "Evidence line 006." in selected
+        # A stationary pointer must keep scrolling and extending the selection.
+        previous = transcript.scroll_y
+        previous_text = selected
+        await pilot.pause(0.2)
+        assert transcript.scroll_y > previous
+        assert len(app.screen.get_selected_text()) > len(previous_text)
+        await pilot.mouse_up(transcript, offset=(12, 19))
+        await pilot.pause()
+        stopped = transcript.scroll_y
+        selected = app.screen.get_selected_text()
+        await pilot.pause(0.2)
+        assert transcript.scroll_y == stopped
+        assert app.screen.get_selected_text() == selected
+
+        # Dragging back up selects earlier messages, and leaving the edge stops it.
+        last = next(message.children[0] for message in reversed(messages)
+                    if 2 < message.children[0].region.y < 18)
+        await pilot.mouse_down(last, offset=text_span(last, "Evidence")[1])
+        await drag_to(pilot, transcript, (12, 0))
+        await pilot.pause(0.2)
+        assert transcript.scroll_y < stopped
+        assert app.screen.get_selected_text()
+        await drag_to(pilot, transcript, (12, 10))
+        await pilot.pause()
+        stopped = transcript.scroll_y
+        await pilot.pause(0.2)
+        assert transcript.scroll_y == stopped
+        await pilot.mouse_up(transcript, offset=(12, 10))
+
+
+@pytest.mark.asyncio
+async def test_selection_survives_tool_output_collapsing():
+    tool = ToolTreeWidget("system", collapsed=False)
+    index = tool.add_tool("bash", {"command": "printf evidence"})
+    tool.mark_tool_complete(index, "done", "tool evidence")
+    after = ChatMessage("assistant", "Later evidence remains selectable.")
+    app = SelectionApp(Vertical(tool, after))
+
+    async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        body = after.children[0]
+        end = text_span(body, "Later evidence remains selectable.")[1]
+        await pilot.mouse_down(tool, offset=text_span(tool, "tool evidence")[0])
+        await pilot.hover(body, offset=end)
+        await pilot.mouse_up(body, offset=end)
+        tool.toggle_collapse()
+        await pilot.pause()
+        # The old selection is now beyond the end of the one-line tool summary.
+        selected = app.screen.get_selected_text()
+        assert "Later evidence remains" in selected
+        assert "tool evidence" not in selected

@@ -27,6 +27,7 @@ Commands:
   chat         Send a single message (non-interactive)
   debug        Reproduce, diagnose, and verify a bug
   models       List model IDs; --refresh queries provider catalogs
+  backends     Check installed agent integrations, including Claude Science
   eval         Run a coding-model eval task from a YAML file and print JSON report
   serve        Start HTTP API server
   init         Initialize project with AGENTS.md
@@ -240,6 +241,36 @@ def models(
         raise typer.Exit(1)
 
 
+def _launch_options(directory, model, backend, session_id=None):
+    from codesm.agent.backends import availability
+    from codesm.auth.credentials import CredentialStore
+    from codesm.config import Config
+    from codesm.session.session import Session
+    session = Session.load(session_id) if session_id else None
+    if session_id and session is None:
+        raise typer.BadParameter(f"Session not found: {session_id}", param_hint="--session")
+    directory = session.directory if session else Path(directory).resolve()
+    config = Config.load(directory=directory)
+    backend = backend or (session.backend if session else config.backend)
+    problem = availability(backend)
+    if problem:
+        raise typer.BadParameter(problem, param_hint="--backend")
+    if model is None and backend == "native":
+        profile = config.agents.get("main")
+        model = (profile.model if profile else None) or (config.model if "model" in config.model_fields_set
+            else CredentialStore().get_preferred_model()) or config.model
+    return directory, model, backend, session
+
+
+@app.command()
+def backends():
+    """Check installed agent backends without sending a model request."""
+    from codesm.agent.backends import BACKENDS, availability
+    for key, name in BACKENDS.items():
+        typer.echo(f"{key:14} {name}: {availability(key) or 'installed'}")
+    typer.echo("Start: codesm run --backend <name>. Switch inside codesm with /backend.")
+
+
 @app.command()
 def run(
     directory: Path = typer.Argument(
@@ -249,13 +280,14 @@ def run(
     model: str = typer.Option(
         None,
         "--model", "-m",
-        help="Model to use (provider/model)",
+        help="Native provider/model or external CLI model ID; omit for the backend's default",
     ),
     session: str = typer.Option(
         None,
         "--session", "-s",
         help="Session ID to load (for continuing previous conversations)",
     ),
+    backend: str = typer.Option(None, "--backend", "-b", help="Agent backend: native, claude-code, codex, or claude-science (experimental)"),
     dangerously_skip_permissions: bool = typer.Option(
         False,
         "--dangerously-skip-permissions",
@@ -275,15 +307,8 @@ def run(
             err=True,
         )
 
-    # Use preferred model from config if no model specified
-    if model is None:
-        from codesm.config import Config
-        config = Config.load(directory=directory)
-        store = CredentialStore()
-        profile = config.agents.get("main")
-        model = (profile.model if profile else None) or (config.model if "model" in config.model_fields_set else store.get_preferred_model()) or config.model
-
-    app = CodesmApp(directory=directory, model=model, session_id=session)
+    directory, model, backend, _ = _launch_options(directory, model, backend, session)
+    app = CodesmApp(directory=directory, model=model, session_id=session, backend=backend)
     app.run()
 
 
@@ -292,6 +317,8 @@ def chat(
     message: str = typer.Argument(..., help="Message to send"),
     directory: Path = typer.Option(Path("."), "--dir", "-d"),
     model: str = typer.Option(None, "--model", "-m"),
+    backend: str = typer.Option(None, "--backend", "-b", help="Agent backend: native, claude-code, codex, or claude-science (experimental)"),
+    session: str = typer.Option(None, "--session", "-s", help="Continue a saved codesm session"),
     dangerously_skip_permissions: bool = typer.Option(
         False,
         "--dangerously-skip-permissions",
@@ -312,19 +339,14 @@ def chat(
             err=True,
         )
 
-    # Use preferred model from config if no model specified
-    if model is None:
-        from codesm.config import Config
-        config = Config.load(directory=directory)
-        store = CredentialStore()
-        profile = config.agents.get("main")
-        model = (profile.model if profile else None) or (config.model if "model" in config.model_fields_set else store.get_preferred_model()) or config.model
+    directory, model, backend, saved_session = _launch_options(directory, model, backend, session)
 
     async def run_chat():
         from codesm.diff_preview import set_diff_preview_enabled
         from contextlib import aclosing
         set_diff_preview_enabled(False)
-        agent = Agent(directory=directory, model=model)
+        agent = Agent(directory=directory, model=model, backend=backend, session=saved_session)
+        typer.echo(f"Session: {agent.session.id} · backend: {agent.backend}", err=True)
         try:
             async with aclosing(agent.chat(message)) as stream:
                 async for chunk in stream:
@@ -337,7 +359,11 @@ def chat(
             await agent.cleanup()
             set_diff_preview_enabled(True)
 
-    asyncio.run(run_chat())
+    try:
+        asyncio.run(run_chat())
+    except Exception as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(1) from error
 
 
 @app.command()
@@ -347,7 +373,8 @@ def debug(
     model: str = typer.Option(None, "--model", "-m"),
 ):
     """Reproduce a bug, track hypotheses, and verify the original failing check."""
-    chat("/debug " + message, directory=directory, model=model, dangerously_skip_permissions=False)
+    chat("/debug " + message, directory=directory, model=model, backend="native", session=None,
+         dangerously_skip_permissions=False)
 
 
 @app.command()

@@ -1,0 +1,160 @@
+---
+title: Agent backends
+description: Use Claude Code, Codex, and experimental Claude Science from one codesm conversation.
+---
+
+Codesm supports four execution backends:
+
+| Backend | Executes the work | Authentication |
+| --- | --- | --- |
+| `native` | Codesm's agent loop and specialist tools | Codesm's configured API providers |
+| `claude-code` | Installed Claude Code, through the official Agent SDK | Claude Code's own login and environment |
+| `codex` | Installed Codex, through app-server | Codex's own login and configuration |
+| `claude-science` (experimental) | Running Claude Science app, through its local API | Science's own login and configuration |
+
+## Install and launch
+
+Install the official CLIs you want to use and sign in with `claude auth login`
+or `codex login`. Codesm leaves their credentials with those tools.
+
+From the codesm checkout, install the optional Claude integration:
+
+```bash
+uv tool install --reinstall ".[agents]"
+codesm backends
+codesm run ./project --backend claude-code
+```
+
+For development, use `uv sync --extra agents --extra dev` and
+`uv run codesm run ./project --backend claude-code`. The extra uses the official
+Python Agent SDK; it includes a bundled CLI, but codesm explicitly uses your
+installed `claude` from `PATH`. Codex integration needs no additional Python SDK.
+
+```bash
+codesm run ./project --backend codex
+codesm run ./project --backend claude-code --model sonnet
+codesm chat "Inspect the failing test" --dir ./project --backend codex
+codesm chat "Continue" --session session_... --backend claude-code
+```
+
+Single-message runs print their codesm session ID. `--session` restores that
+conversation and its selected backend; an explicit `--backend` switches it.
+Single-message runs deny actions that require an interactive approval or answer.
+Use `codesm run --session session_...` to handle those requests in the terminal UI.
+
+## Switch in the same conversation
+
+Open `/backend` and choose Native, Claude Code, Codex, or Claude Science. Finish or interrupt the
+current task first. The prompt, transcript, approval dialogs, tool output, and
+follow-up questions stay in codesm. `/models` selects an API model for Native or
+accepts a model ID/alias for the external agent. Enter `default` to let that CLI
+choose its configured model.
+
+Each codesm session stores a separate native session ID for each external backend.
+Continuing on the same backend resumes that native session. Switching away and back
+adds relevant intervening messages, tool results, original task, saved compact
+context, and project memory. Project instructions discovered by codesm are passed
+alongside each CLI's own instructions. The backend's internal agent loop remains
+responsible for its tools and context management.
+
+The original history stays on disk. Handoff context is bounded, strips opaque
+provider replay data, and includes commands for retrieving older local evidence.
+Private model state cannot be transferred; the destination may still need to verify
+changed files. Forking or clearing a codesm conversation creates fresh backend
+sessions so a branch cannot accidentally mutate its parent's native conversation.
+
+## Defaults
+
+```json title="codesm.json"
+{
+  "backend": "claude-code",
+  "backend_models": {"claude-code": "sonnet"},
+  "model": "openai/gpt-5-mini"
+}
+```
+
+`model` configures the Native backend. `backend_models` supplies defaults for
+external agents; model choices made within a session are saved with that session.
+Omit an external model to keep its CLI's default.
+
+## Permissions, accounting, and recovery
+
+Codex uses its workspace-write sandbox and requests approval for untrusted actions.
+Claude Code retains its permission system and routes pending permission requests
+to codesm. Existing CLI permission rules still apply. Unsupported Codex permission
+grants and MCP elicitation requests are declined. `read_only: true` selects Codex's
+read-only sandbox or restricts Claude Code to its read/search tools.
+
+One codesm task can use a checkout at a time, across codesm processes. This lock
+does not coordinate unrelated CLI processes or edits in your editor. Cancellation
+stops the active backend transport and saves visible partial output. If a CLI
+disconnects, the task is marked failed and its saved session remains available.
+An interrupted action may already have changed files; the handoff explicitly asks
+the next agent to verify uncertain outcomes before retrying.
+
+External token usage is recorded when the CLI reports it. Subscription charges
+cannot be inferred from token counts or API-equivalent cost, so codesm displays
+external cost as unknown. Authentication and billing follow the official CLI's
+configuration, including API keys present in its environment. See the official
+[Codex authentication guide](https://learn.chatgpt.com/docs/auth) and
+[Claude SDK subscription update](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan).
+
+Codesm's native dollar/token budgets and tool allow/deny lists are not yet mapped
+to external runtimes; external runs reject those configurations rather than
+silently ignoring them. Native request accounting, Smart/Rush routing, and codesm
+specialist settings belong to the Native backend. Claude's turns are capped using
+the main profile's iteration limit or the request limit; Codex and Science manage their own
+agent loop. This integration uses manual switching; automatic quota failover is
+not implemented.
+
+The transports follow the official [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python)
+and [Codex app-server](https://learn.chatgpt.com/docs/app-server) interfaces. CLI
+updates may change supported models or protocol behavior.
+
+## Claude Science (experimental)
+
+Install Claude Science, start its local app, and complete sign-in in the browser:
+
+```bash
+claude-science serve --detached
+codesm run ./project --backend claude-science
+```
+
+If Science is already running, only the codesm command is needed. The adapter uses
+the default Science data directory and connects through the native `claude-science
+url` login flow. It needs no additional Python package or API key. Codesm keeps
+temporary local authentication cookies in memory and leaves the shared Science
+daemon running on exit.
+
+Use `/models` or `--model` with an exact model ID supported by your installed Science
+app; omit it to use Science's default. `/backend` switches between Science, the
+coding CLIs, and API models while retaining the codesm conversation and memory.
+
+The adapter reads Science's persisted main transcript, including paginated tool
+results and answers that replace waiting placeholders. Messages appear when saved
+by Science, rather than token by token. Native hidden reasoning and harness notices
+are not copied into shared history. Questions and tool approval requests, including
+requests from child agents in the same session, appear in codesm. Existing Science
+grants still apply; approving a forwarded request does not create a permanent
+Science grant.
+
+Completed turns continue in the same Science frame. Cancellation stops that frame,
+not the app. Since a cancelled frame cannot accept a new prompt directly, an
+interrupted or failed turn continues in a fresh frame within the same Science
+project, using the saved codesm history. Existing Science artifacts remain in that
+project. If a disconnect prevents cancellation, codesm keeps the frame ID and
+refuses to submit another task while it is active; finish or cancel it in Science
+before continuing. A pre-existing active frame is never silently cancelled.
+
+Science uses its own sandbox and approved filesystem access. The host checkout
+path is included in the prompt, but it is not automatically mounted or granted
+access. `read_only: true` is rejected because this adapter cannot enforce it.
+Science's configuration controls its internal agent loop and execution limits.
+
+This adapter was exercised against **Claude Science 0.1.27**. Its local HTTP API is
+undocumented and may change with an app update. Rich artifact editing, plan review,
+and specialized interactions stay in the Science browser; unsupported interactions
+stop the codesm run with an explanation. Child-agent transcripts and their separate
+token usage are not yet imported; usage reports cover the main transcript and cost
+remains unknown. See the official [Science CLI guide](https://claude.com/docs/claude-science/command-line-settings)
+for installation and app settings.

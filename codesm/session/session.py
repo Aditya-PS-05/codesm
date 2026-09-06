@@ -33,6 +33,9 @@ class Session:
     context_messages: list[dict] = field(default_factory=list)
     context_message_count: int = 0
     last_model: str = ""
+    backend: str = "native"
+    backend_sessions: dict = field(default_factory=dict)
+    backend_models: dict = field(default_factory=dict)
     run_state: dict = field(default_factory=dict)
     pending_response: dict = field(default_factory=dict)
     file_state: dict = field(default_factory=dict)
@@ -92,6 +95,9 @@ class Session:
             context_messages=data.get("context_messages", []),
             context_message_count=data.get("context_message_count", 0),
             last_model=data.get("last_model", ""),
+            backend=data.get("backend", "native"),
+            backend_sessions=data.get("backend_sessions", {}),
+            backend_models=data.get("backend_models", {}),
             run_state=run_state,
             file_state=data.get("file_state", {}),
             created_at=datetime.fromisoformat(data["created_at"]),
@@ -149,6 +155,9 @@ class Session:
             "context_messages": self.context_messages,
             "context_message_count": self.context_message_count,
             "last_model": self.last_model,
+            "backend": self.backend,
+            "backend_sessions": self.backend_sessions,
+            "backend_models": self.backend_models,
             "run_state": self.run_state,
             "pending_response": self.pending_response,
             "file_state": self.file_state,
@@ -204,6 +213,7 @@ class Session:
         result = []
         pending = {}
         completed = {}
+        deferred = []
 
         def flush():
             for call_id in pending:
@@ -213,12 +223,19 @@ class Session:
                 }))
             pending.clear()
             completed.clear()
+            result.extend(deferred)
+            deferred.clear()
 
         source = self.messages
         if self.context_messages and 0 <= self.context_message_count <= len(self.messages):
             source = self.context_messages + self.messages[self.context_message_count:]
         for m in source:
             role = m.get("role")
+            if role == "backend_input":
+                # Native tools may still be running when the user answers a question.
+                # Finish their tool group before injecting the answer as user context.
+                deferred.append({"role": "user", "content": m.get("content", "")})
+                continue
             if role == "tool":
                 if m.get("tool_call_id") in pending:
                     completed[m["tool_call_id"]] = m
@@ -229,8 +246,17 @@ class Session:
                 continue
             if role not in ("user", "assistant"):
                 continue
+            if role == "assistant" and m.get("backend") and pending and result[-1].get("backend"):
+                # External agents interleave commentary, questions, and parallel tools.
+                # Group their calls/results for API replay without changing the archive.
+                calls = m.get("tool_calls", [])
+                result[-1]["tool_calls"].extend(deepcopy(calls))
+                pending.update({call["id"]: call for call in calls})
+                if m.get("content"):
+                    deferred.append({key: value for key, value in m.items() if key != "tool_calls"})
+                continue
             flush()
-            result.append(m)
+            result.append(deepcopy(m) if m.get("backend") and m.get("tool_calls") else m)
             pending.update({tc["id"]: tc for tc in m.get("tool_calls", [])})
         flush()
         return result
@@ -238,8 +264,8 @@ class Session:
     def get_messages_for_display(self) -> list[dict]:
         """Get messages formatted for display (user/assistant/tool_display)"""
         return [
-            m for m in self.messages 
-            if m.get("role") in ("user", "assistant", "tool_display") and m.get("content")
+            ({**m, "role": "user"} if m.get("role") == "backend_input" else m) for m in self.messages
+            if m.get("role") in ("user", "assistant", "tool_display", "backend_input") and m.get("content")
         ]
     
     def set_title(self, title: str):
@@ -296,6 +322,7 @@ class Session:
         self.run_state = {}
         self.pending_response = {}
         self.file_state = {}
+        self.backend_sessions = {}
         from codesm.memory.history import HistoryStore
         HistoryStore().delete_session(self.id)
         Storage.delete(["todo", self.id])
@@ -339,6 +366,8 @@ class Session:
             branch_name=branch_name,
             _title_generated=True,  # Preserve parent's title
             last_model=self.last_model,
+            backend=self.backend,
+            backend_models=deepcopy(self.backend_models),
             debug_state=deepcopy(self.debug_state) if fork_point == len(self.messages) else {},
             agent_runs=deepcopy(self.agent_runs) if fork_point == len(self.messages) else {},
             context_messages=deepcopy(self.context_messages) if fork_point == len(self.messages) else [],

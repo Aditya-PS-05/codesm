@@ -228,11 +228,11 @@ async def test_native_terminal_theme_preview_and_cancel_restore_actual_theme(ori
         await pilot.press("down")
         if original == "dark":
             await pilot.press("up")
-            assert app.theme == "textual-ansi" and app.ansi_color
+            assert app.theme == "ansi-dark" and app.native_ansi_color
             assert app.current_theme.foreground == app.current_theme.background == "ansi_default"
             assert modal.visible_items[0].styles.text_style.reverse
         else:
-            assert app.theme == "codesm-dark" and not app.ansi_color
+            assert app.theme == "codesm-dark" and not app.native_ansi_color
         await pilot.press("escape")
         assert app.theme == THEMES[original].name
-        assert app.ansi_color == (original == "terminal")
+        assert app.native_ansi_color == (original == "terminal")

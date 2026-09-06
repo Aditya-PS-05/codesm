@@ -3,6 +3,7 @@
 import subprocess
 from urllib.parse import urlsplit
 from textual import events
+from textual.screen import Screen
 from textual.widgets import Static
 from textual.binding import Binding
 
@@ -45,7 +46,33 @@ def copy_text(app, text: str) -> None:
         # OSC 52 has no success acknowledgement from the terminal.
         app.notify("Sent copy request to terminal", timeout=2)
         return
-    app.notify("Copied!", timeout=1.5)
+    app.notify("Copied to clipboard", timeout=1.5)
+
+
+class TranscriptScreen(Screen):
+    """Keep copying valid text when a selected tool or message changes height."""
+
+    def _start_auto_scroll(self, widget, direction, speed=1.0):
+        # User selection must take precedence over following the live response.
+        widget.release_anchor()
+        super()._start_auto_scroll(widget, direction, speed)
+
+    def get_selected_text(self) -> str | None:
+        if not self.selections:
+            return None
+        parts: list[str] = []
+        for widget, selection in self.selections.items():
+            if not widget.is_attached:
+                continue
+            try:
+                selected = widget.get_selection(selection)
+            except IndexError:
+                # Textual 8.2 can still index past a collapsed/reflowed widget.
+                # Discard its stale range while preserving the other messages.
+                continue
+            if selected is not None:
+                parts.extend(selected)
+        return "".join(parts).rstrip("\n")
 
 
 class SelectableMixin:

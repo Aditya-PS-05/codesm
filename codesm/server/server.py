@@ -23,7 +23,7 @@ async def health():
 async def chat(request: ChatRequest, directory: str = "."):
     from codesm.agent.agent import Agent
     
-    agent = Agent(directory=Path(directory), model=request.model)
+    agent = Agent(directory=Path(directory), model=request.model, backend="native")
     
     async def stream():
         async for chunk in agent.chat(request.message):

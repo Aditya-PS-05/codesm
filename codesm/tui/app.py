@@ -19,8 +19,10 @@ from .themes import THEMES
 from .modals import ModelSelectModal, ProviderConnectModal, APIKeyInputModal, ThemeSelectModal, PermissionModal, ModeSelectModal, DiffPreviewModal, DiffPreviewResponse
 from .session_modal import SessionListModal
 from .command_palette import CommandPaletteModal
+from .backend_modal import BackendSelectModal, BackendInputModal
+from codesm.agent.backends import BACKENDS
 from .chat import ChatMessage
-from .clipboard import copy_text
+from .clipboard import TranscriptScreen, copy_text
 from .tools import (
     TodoListWidget, StreamingTextWidget, ToolTreeWidget, ThinkingTreeWidget,
     OracleTreeWidget, SubAgentTreeWidget, ClickablePath
@@ -41,6 +43,9 @@ VERSION = "0.1.0"
 class CodesmApp(App):
     """A conversation, a prompt, and the details when you need them."""
 
+    def get_default_screen(self):
+        return TranscriptScreen(id="_default")
+
     CSS = """
     Screen {
         background: $background;
@@ -48,6 +53,7 @@ class CodesmApp(App):
         layout: vertical;
     }
     .hidden { display: none; }
+    Static { pointer: text; }
     #chat-container {
         width: 100%;
         height: 1fr;
@@ -108,6 +114,32 @@ class CodesmApp(App):
         text-align: right;
         text-overflow: ellipsis;
     }
+    ToastRack {
+        margin: 0 0 4 0;
+        align: left bottom;
+        max-height: 50%;
+        overflow-y: auto;
+    }
+    ToastHolder { align-horizontal: left; }
+    Toast {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        margin: 0;
+        padding: 0 1;
+        border: none;
+        background: $background;
+        color: $text-muted;
+    }
+    Toast.-warning { color: $warning; }
+    Toast.-error { color: $error; }
+    Screen:ansi Toast {
+        background: ansi_default;
+        color: ansi_default;
+        text-style: dim;
+    }
+    Screen:ansi Toast.-warning { color: ansi_yellow; text-style: bold; }
+    Screen:ansi Toast.-error { color: ansi_red; text-style: bold; }
     .run-outcome { height: auto; padding: 0 1; margin-top: 1; color: $warning; }
     .run-outcome.verified { color: $success; }
     Screen:ansi #chat-input-section {
@@ -131,11 +163,15 @@ class CodesmApp(App):
         Binding("tab", "toggle_mode", "Queue/Mode", show=False, priority=True),
     ]
 
-    def __init__(self, directory: Path, model: str, session_id: str | None = None):
+    def __init__(self, directory: Path, model: str | None, session_id: str | None = None, backend: str | None = None):
         super().__init__(ansi_color=True)
+        # Preserve NO_COLOR terminal defaults, then let each theme choose ANSI.
+        self.ansi_color = None
         self.directory = directory
-        self.model = model
-        self._base_model = model  # Store the original model for mode switching
+        self._requested_backend = backend
+        self._requested_model = model
+        self.model = model or Config.load(directory=directory).model
+        self._base_model = self.model
         self.agent = None
         self.session_id = session_id
         self.in_chat = False
@@ -186,6 +222,8 @@ class CodesmApp(App):
 
     def _short_model_name(self) -> str:
         """Get short display name for current model"""
+        if self.agent and self.agent.backend != "native":
+            return BACKENDS[self.agent.backend] + (f" · {self.agent.model}" if self.agent.model != "default" else "")
         if "/" in self.model:
             _, model_id = self.model.split("/", 1)
             return model_id
@@ -211,7 +249,7 @@ class CodesmApp(App):
 
     async def on_unmount(self):
         """Cleanup when app unmounts"""
-        self._set_mouse_pointer("")
+        self._set_pointer_shape("default")
         # Stop file watcher
         if self._file_watcher:
             await self._file_watcher.stop()
@@ -256,15 +294,24 @@ class CodesmApp(App):
                 logger.info(f"Loaded previous session: {self.session_id}")
                 self.directory = session.directory
                 self.query_one("#working-directory", Static).update(str(self.directory))
-                self.agent = Agent(directory=self.directory, model=self.model, session=session)
+                self.agent = Agent(directory=self.directory, model=self._requested_model, session=session,
+                                   backend=self._requested_backend, ask_user=self._ask_backend_question)
                 # Switch to chat and display previous messages
                 self._switch_to_chat()
                 await self._display_session_messages(session.get_messages_for_display())
             else:
                 logger.warning(f"Could not load session: {self.session_id}, creating new one")
-                self.agent = Agent(directory=self.directory, model=self.model)
+                self.agent = Agent(directory=self.directory, model=self._requested_model,
+                                   backend=self._requested_backend, ask_user=self._ask_backend_question)
         else:
-            self.agent = Agent(directory=self.directory, model=self.model)
+            self.agent = Agent(directory=self.directory, model=self._requested_model,
+                               backend=self._requested_backend, ask_user=self._ask_backend_question)
+
+        self._base_model = self.agent._model
+        self.model = self.agent.model
+        if self.agent.backend == "native" and self._mode == "rush":
+            self.model = self._get_effective_model()
+            self.agent.model = self.model
 
         # Update model display to show provider prefix
         self._update_model_display()
@@ -382,7 +429,11 @@ class CodesmApp(App):
     def _execute_command_sync(self, cmd: str):
         """Execute command synchronously, scheduling async operations"""
         if cmd == "/models":
-            self.push_screen(ModelSelectModal(self.model, self._get_model_config()), self._on_model_selected)
+            self._show_models()
+        elif cmd == "/backend":
+            self.push_screen(BackendSelectModal(self.agent.backend), self._on_backend_selected)
+        elif cmd.startswith("/backend "):
+            self._on_backend_selected(cmd.split(maxsplit=1)[1])
         elif cmd == "/theme":
             self.push_screen(ThemeSelectModal(self._theme_name), self._on_theme_selected)
         elif cmd == "/new":
@@ -408,10 +459,9 @@ class CodesmApp(App):
         elif cmd == "/debug":
             self.notify("Use /debug <bug description> to start; /debug off to finish.")
         elif cmd == "/help":
-            self.notify("Commands: /init, /new, /fork, /branches, /dryrun, /audit, /models, /mode, /session, /status, /theme, /connect, /help")
+            self.notify("Commands: /init, /new, /fork, /branches, /dryrun, /audit, /backend, /models, /mode, /session, /status, /theme, /connect, /help")
         elif cmd == "/status":
-            mode_str = "Rush" if self._mode == "rush" else "Smart"
-            self.notify(f"Mode: {mode_str} | Model: {self.model} | Dir: {self.directory}")
+            self.notify(f"Backend: {BACKENDS[self.agent.backend]} | Model: {self.agent.model} | Dir: {self.directory}")
         elif cmd == "/cost":
             self._show_cost_stats()
         elif cmd == "/init":
@@ -446,6 +496,9 @@ class CodesmApp(App):
 
     def _set_mode(self, mode: str):
         """Set the agent mode (smart or rush)"""
+        if self.agent and self.agent.backend != "native":
+            self.notify("Smart/Rush modes apply to the native backend. Use /models to select this agent's model.")
+            return
         if mode not in ("smart", "rush"):
             return
         
@@ -469,10 +522,14 @@ class CodesmApp(App):
         self.notify(f"{mode_name}: {model_short}")
 
     def _show_cost_stats(self):
+        from codesm.agent.backends import BACKENDS
         stats = self.agent.budget.get_session_stats()
-        cost = "unknown (configure model_prices)" if stats.unpriced_requests else f"~${stats.total_cost:.4f}"
+        external = any(record.get("task_type") in BACKENDS and record.get("task_type") != "native"
+                       for record in self.agent.session.usage_records)
+        cost = ("unknown (external agent billing)" if external else "unknown (configure model_prices)") if stats.unpriced_requests else f"~${stats.total_cost:.4f}"
         tokens = stats.total_input_tokens + stats.total_output_tokens
-        self.notify(f"Usage: {tokens:,} tokens · {stats.total_requests} requests · {cost} · "
+        unit = "usage reports" if external else "requests"
+        self.notify(f"Usage: {tokens:,} tokens · {stats.total_requests} {unit} · {cost} · "
                     f"{stats.estimated_requests} estimated requests")
     
     def _run_init_command(self):
@@ -516,7 +573,7 @@ class CodesmApp(App):
             return
         if session.directory != self.directory:
             from codesm.agent.agent import Agent
-            replacement = Agent(directory=session.directory, model=self.model, session=session)
+            replacement = Agent(directory=session.directory, session=session, ask_user=self._ask_backend_question)
             await self.agent.cleanup()
             self.agent = replacement
             self.directory = session.directory
@@ -528,6 +585,11 @@ class CodesmApp(App):
             self._init_lsp()
         else:
             self.agent.session = session
+            if session.backend == "native":
+                self.agent.backend = "native"
+        self.model = self.agent.model
+        self._base_model = self.agent._model
+        self._update_model_display()
         self._queued_messages.clear()
         self._switch_to_chat(show_session_start=False)
         await self._display_session_messages(session.get_messages_for_display())
@@ -541,6 +603,12 @@ class CodesmApp(App):
         if result:
             if result == "__connect_provider__":
                 self.action_connect_provider()
+                return
+            if self.agent and self.agent.backend != "native":
+                self.agent.model = result
+                self.model = self.agent.model
+                self._update_model_display()
+                self._get_active_input().focus()
                 return
             
             # When user selects a model, store it as base and reset to smart mode
@@ -560,6 +628,42 @@ class CodesmApp(App):
             logger.info(f"Saved preferred model: {result}")
 
         self._get_active_input().focus()
+
+    def _show_models(self):
+        if self.agent and self.agent.backend != "native":
+            self.push_screen(BackendInputModal(f"{BACKENDS[self.agent.backend]} model",
+                "Enter a model supported by this agent, or default to use its configured model.",
+                value=self.agent.model), self._on_model_selected)
+        else:
+            self.push_screen(ModelSelectModal(self.model, self._get_model_config()), self._on_model_selected)
+
+    def _on_backend_selected(self, result):
+        if result:
+            if self._chat_worker and self._chat_worker.is_running:
+                self.notify("Finish or interrupt the active task before switching backends.")
+                return
+            try:
+                self.agent.backend = result
+            except (ValueError, RuntimeError) as error:
+                self.notify(str(error), severity="warning")
+                return
+            self._queued_messages.clear()
+            self.model = self.agent.model
+            self._update_model_display()
+            self.notify(f"Using {BACKENDS[result]}. Conversation and handoff context retained.")
+        self._get_active_input().focus()
+
+    async def _ask_backend_question(self, question):
+        options = question.get("options") or []
+        description = question.get("question", "")
+        if options:
+            description += "\n\n" + "\n".join(
+                f"{option['label']}: {option.get('description', '')}" for option in options)
+        answer = await self.push_screen_wait(BackendInputModal(
+            question.get("header", "Agent question"), description, secret=question.get("isSecret", False)))
+        if answer is not None and not question.get("isSecret"):
+            await self.query_one("#messages", Vertical).mount(ChatMessage("user", answer))
+        return answer
 
     def _on_provider_selected(self, result: str | None):
         """Handle provider selection"""
@@ -859,7 +963,7 @@ class CodesmApp(App):
             error_widget = ChatMessage("assistant", f"Error: {error_msg}")
             await messages_container.mount(error_widget)
 
-            if "credentials" in error_msg.lower() or "api" in error_msg.lower():
+            if self.agent.backend == "native" and ("credentials" in error_msg.lower() or "api" in error_msg.lower()):
                 hint = ChatMessage("assistant", "Try running /connect to set up your API key")
                 await messages_container.mount(hint)
 
@@ -927,12 +1031,13 @@ class CodesmApp(App):
         hints = "tab to queue message" if self._processing else "ctrl+p commands · ctrl+t transcript"
         if self.size.width < 65 and not self._processing:
             hints = "ctrl+p commands"
-        if self.screen.get_selected_text():
+        if self.screen.selections:
             hints = "ctrl+c copy · esc clear selection"
         elif self._mouse_pointer == "text":
             hints = "drag to select · ctrl+c copy"
         model = self._short_model_name()
-        context = f"~{self._context_left}% context left"
+        external = self.agent and self.agent.backend != "native"
+        context = "agent manages context" if external else f"~{self._context_left}% context left"
         model_budget = max(0, self.size.width // 2 - len(context) - 3)
         if model_budget >= 8:
             if len(model) > model_budget:
@@ -985,10 +1090,11 @@ class CodesmApp(App):
 
     async def _show_model_selector(self):
         """Show model selection modal"""
-        self.push_screen(ModelSelectModal(self.model, self._get_model_config()), self._on_model_selected)
+        self._show_models()
 
     def _update_model_display(self):
-        self.query_one("#model-indicator", Static).update(f"{self._get_mode_display()} · {self.model}")
+        label = BACKENDS[self.agent.backend] if self.agent and self.agent.backend != "native" else self._get_mode_display()
+        self.query_one("#model-indicator", Static).update(f"{label} · {self.model}")
         self._update_footer()
 
     def _get_tool_category(self, tool_name: str) -> str:
@@ -1074,12 +1180,16 @@ class CodesmApp(App):
 
     def action_cancel_chat(self):
         """Cancel the current chat processing"""
-        if self.screen.get_selected_text():
+        if self.screen.selections:
             self.screen.clear_selection()
             self._update_footer()
             return
         if self._chat_worker and self._chat_worker.is_running:
             self._cancel_requested = True
+            if isinstance(self.screen, PermissionModal):
+                self.screen.action_deny()
+            elif isinstance(self.screen, BackendInputModal):
+                self.screen.dismiss(None)
             self._chat_worker.cancel()
             logger.info("Cancel requested by user")
         elif self._queued_messages:
@@ -1097,33 +1207,24 @@ class CodesmApp(App):
             copy_text(self, text)
 
     def action_copy_or_cancel(self):
-        if self._selected_text():
-            self.action_copy_selection()
+        if text := self._selected_text():
+            copy_text(self, text)
+        elif self.screen.selections:
+            self.notify("Selection changed; select the text again", timeout=2)
         else:
             self.action_cancel_or_quit()
 
     def on_text_selected(self):
         self._update_footer()
 
-    def _set_mouse_pointer(self, shape: str):
-        if shape == self._mouse_pointer:
-            return
-        self._mouse_pointer = shape
-        self._update_footer()
-        driver = self._driver
-        if driver and not driver.is_headless and not driver.is_web:
-            # OSC 22: supported terminals show an I-beam over selectable text.
-            # https://sw.kovidgoyal.net/kitty/pointer-shapes/
-            driver.write(f"\x1b]22;{shape}\x1b\\")
-
     def on_mouse_move(self, event: events.MouseMove):
         widget = self.mouse_over
-        shape = ""
-        if event.style.link:
-            shape = "pointer"
-        elif widget and (widget.allow_select or isinstance(widget, Input)):
-            shape = "text"
-        self._set_mouse_pointer(shape)
+        if widget and not widget.is_container and widget.allow_select:
+            widget.styles.pointer = "pointer" if event.style.link else "text"
+        shape = self.screen._pointer_shape
+        if shape != self._mouse_pointer:
+            self._mouse_pointer = shape
+            self._update_footer()
 
     def action_cancel_or_quit(self):
         """Cancel chat if running, otherwise quit"""
@@ -1151,7 +1252,12 @@ class CodesmApp(App):
             self._set_mode("rush" if self._mode == "smart" else "smart")
 
     def action_connect_provider(self):
-        """Show connect provider modal"""
+        """Connect an API provider or explain the selected CLI's login command."""
+        if self.agent and self.agent.backend != "native":
+            from codesm.agent.backends import LOGIN_COMMANDS
+            command = LOGIN_COMMANDS[self.agent.backend]
+            self.notify(f"Sign in with `{command}` in your terminal, then continue here.")
+            return
         self.push_screen(ProviderConnectModal(self._get_model_config()), self._on_provider_selected)
 
     def action_new_session(self):
@@ -1210,6 +1316,9 @@ class CodesmApp(App):
     
     def _toggle_dry_run(self):
         """Toggle dry-run mode (preview changes without applying)"""
+        if self.agent and self.agent.backend != "native":
+            self.notify("Dry run is unavailable for external backends; configure read_only to prevent edits.")
+            return
         if not hasattr(self, '_dry_run_mode'):
             self._dry_run_mode = False
         
@@ -1267,7 +1376,11 @@ class CodesmApp(App):
     def _on_permission_request(self, request: PermissionRequest):
         """Called when a tool requests permission - shows the modal."""
         self._pending_permission_requests[request.id] = request
-        self.call_from_thread(self._show_permission_modal, request)
+        import threading
+        if threading.get_ident() == self._thread_id:
+            self._show_permission_modal(request)
+        else:
+            self.call_from_thread(self._show_permission_modal, request)
 
     def _show_permission_modal(self, request: PermissionRequest):
         """Show the permission modal and handle the response."""
