@@ -1,6 +1,8 @@
 """Local Science protocol checks without credentials, models, or a running daemon."""
 
 import asyncio
+import hashlib
+import io
 import json
 import os
 import sys
@@ -9,6 +11,7 @@ from urllib.parse import parse_qs
 
 import httpx
 import pytest
+from PIL import Image
 
 from codesm.agent.agent import Agent
 from codesm.agent import claude_science as science
@@ -26,7 +29,8 @@ def peer(tmp_path, monkeypatch):
     monkeypatch.setenv("SCIENCE_TEST_URL", "http://127.0.0.1:38492/?nonce=private-test-nonce")
     monkeypatch.setattr(science, "POLL_INTERVAL", 0)
     state = SimpleNamespace(requests=[], frames={}, submissions=[], responses=[], executed=[],
-                            disconnect=False, stale=False, child=False, compact=False, unresolved=False, polls=0)
+                            disconnect=False, stale=False, child=False, compact=False, unresolved=False, polls=0,
+                            image=None)
 
     def message(role, key, content, **fields):
         return {"role": role, "_uuid": key, "content": content, **fields}
@@ -45,6 +49,9 @@ def peer(tmp_path, monkeypatch):
         if req.method == "POST":
             assert req.headers["origin"] == "http://127.0.0.1:38492"
             assert req.headers["x-operon-csrf"] == "test-csrf"
+        if "/cell-images/" in path or path == "/api/artifacts/versions/plot-version":
+            assert state.image is not None
+            return httpx.Response(200, content=state.image, headers={"content-type": "image/png"})
         if path == "/api/projects":
             return httpx.Response(201, json={"project_id": "project-one"})
         if path == "/api/frames":
@@ -86,6 +93,11 @@ def peer(tmp_path, monkeypatch):
                 next(r for r in records if r["_uuid"] == tool + "-result")["content"] = [{
                     "type": "tool_result", "tool_use_id": tool,
                     "content": "Executed" if reply["approved"] else "Denied", "is_error": not reply["approved"]}]
+                if state.image:
+                    # Science adds these to a tool's already-seen assistant record.
+                    next(r for r in records if r["_uuid"] == tool)["_cell_images"] = {tool: [{
+                        "sha256": hashlib.sha256(state.image).hexdigest(), "filename": "response.png",
+                        "content_type": "image/png", "width": 320, "height": 180}]}
                 records.append(message("assistant", ask, [{"type": "tool_use", "id": ask, "name": "ask_user", "input": {}}]))
                 records.append(message("user", ask + "-result", [{"type": "tool_result", "tool_use_id": ask,
                     "content": '{"status":"awaiting_user_response"}'}]))
@@ -99,6 +111,9 @@ def peer(tmp_path, monkeypatch):
                     message("assistant", ask + "-final", [{"type": "thinking", "thinking": "private reasoning", "signature": "opaque"},
                         {"type": "text", "text": "Finished."}], _tokens={"input": 17, "output": 4, "cache_read": 12}),
                 ])
+                if state.image:
+                    records[-1]["_artifact_refs"] = {"response.png": {
+                        "artifact_id": "plot-artifact", "version_id": "plot-version"}}
                 frame.pop("pending", None)
                 frame.update(status="completed", completed_at=f"completion-{turn}")
             return httpx.Response(200, json={"status": "accepted", "remaining_tool_ids": []})
@@ -142,6 +157,43 @@ def peer(tmp_path, monkeypatch):
         return original(**kwargs, transport=httpx.MockTransport(handle))
     monkeypatch.setattr(science.httpx, "AsyncClient", client)
     return state
+
+
+async def test_science_figures_arrive_once_and_survive_resume_and_fork(tmp_path, monkeypatch, peer):
+    from codesm.agent.backends import handoff_prompt
+    from codesm.storage.images import image_path
+    stream = io.BytesIO()
+    Image.new("RGB", (320, 180), "navy").save(stream, format="PNG")
+    peer.image = stream.getvalue()
+
+    async def approve(*args):
+        return True
+    async def answer(question):
+        return "OK"
+    monkeypatch.setattr(science, "approve", approve)
+    agent = Agent(tmp_path, backend="claude-science", config=Config(), ask_user=answer)
+    chunks = [chunk async for chunk in agent.chat("Plot the measured response")]
+    figures = [chunk for chunk in chunks if chunk.type == "image"]
+    assert len(figures) == 1  # Same PNG in a cell and an artifact reference.
+    assert figures[0].content == "response.png"
+    assert chunks.index(figures[0]) < next(i for i, chunk in enumerate(chunks) if "Finished." in chunk.content)
+    path = image_path(figures[0].metadata)
+    assert path.read_bytes() == peer.image and path.stat().st_mode & 0o777 == 0o600
+
+    saved = Session.load(agent.session.id)
+    assert sum("image" in message for message in saved.get_messages_for_display()) == 1
+    assert "Saved image:" in str(saved.get_messages())
+    assert all("image" not in message for message in saved.get_messages())
+    assert "private-cookie" not in str(saved.messages) and "nonce=" not in str(saved.messages)
+    saved.add_message("user", "Continue with Codex")
+    assert str(path) in handoff_prompt(saved, "Continue with Codex", {})
+    fork = saved.fork()
+    fork_path = image_path(next(message["image"] for message in fork.messages if "image" in message))
+    assert fork_path != path and fork_path.read_bytes() == peer.image
+    saved.clear()
+    assert not path.exists() and fork_path.exists()
+    fork.delete()
+    assert not fork_path.exists()
 
 
 @pytest.mark.parametrize("allowed,child,compact", [(True, False, False), (False, False, True), (True, True, False)])

@@ -8,7 +8,7 @@ from typing import AsyncIterator, Literal
 @dataclass
 class StreamChunk:
     """A chunk of streamed response from an LLM"""
-    type: Literal["text", "tool_call", "tool_call_delta", "tool_result", "handoff", "thinking", "thinking_done", "subagent_start", "subagent_done", "usage", "response_items", "run_status", "subagent_progress"]
+    type: Literal["text", "image", "tool_call", "tool_call_delta", "tool_result", "handoff", "thinking", "thinking_done", "subagent_start", "subagent_done", "usage", "response_items", "run_status", "subagent_progress"]
     content: str = ""
     name: str = ""
     args: dict | str = field(default_factory=dict)

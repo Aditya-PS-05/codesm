@@ -95,6 +95,81 @@ def rendered_lines(widget):
     return "\n".join(widget.render_line(y).text for y in range(widget.content_size.height))
 
 
+@pytest.mark.parametrize("image_only", [False, True])
+async def test_inline_images_stream_open_resize_and_restore(tmp_path, offline_terminal, monkeypatch, image_only):
+    import io
+    from PIL import Image
+    from textual.widgets import Link
+    from codesm.storage.images import image_path, save_image
+    from codesm.tui.images import ImageMessage
+    from textual_image.renderable.halfcell import Image as HalfcellRenderable
+    from textual_image.widget import HalfcellImage, UnicodeImage
+    # Exercise the color fallback used by ordinary terminals, including NO_COLOR.
+    monkeypatch.setattr("codesm.tui.images.ImageRenderable", HalfcellRenderable)
+    monkeypatch.setattr("codesm.tui.images.TerminalImage", HalfcellImage)
+    if image_only:
+        monkeypatch.setenv("NO_COLOR", "1")
+    else:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+
+    app = CodesmApp(tmp_path, "openai/fixture")
+    opened = []
+    monkeypatch.setattr(app, "open_url", opened.append)
+    async with app.run_test(size=(100, 38)) as pilot:
+        stream = io.BytesIO()
+        Image.new("RGB", (960, 520), "royalblue").save(stream, format="PNG")
+        metadata = save_image(stream.getvalue(), app.agent.session.id)
+        async def chat(prompt):
+            app.agent.session.add_message("user", prompt)
+            if not image_only:
+                yield StreamChunk(type="text", content="Here is the measured response.")
+            app.agent.session.add_message("assistant", "response.png", image=metadata)
+            yield StreamChunk(type="image", content="response.png", metadata=metadata)
+            if not image_only:
+                yield StreamChunk(type="text", content="The experiment completed.")
+            yield StreamChunk(type="run_status", content="completed")
+        monkeypatch.setattr(app.agent, "chat", chat)
+        app._get_active_input().value = "Plot the experiment"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        figure = app.query_one(ImageMessage)
+        preview = figure.query_one(".image-preview")
+        assert 0 < preview.size.height <= 22
+        assert preview.size.width <= 98
+        assert not preview.allow_select
+        assert isinstance(preview, UnicodeImage if image_only else HalfcellImage)
+        messages = list(app.query_one("#messages", Vertical).children)
+        index = messages.index(figure)
+        if image_only:
+            assert len(messages) == 2  # User message and image, no "No response" placeholder.
+        else:
+            assert isinstance(messages[index - 1], StreamingTextWidget)
+            assert isinstance(messages[index + 1], StreamingTextWidget)
+        link = figure.query_one(Link)
+        link.focus()
+        await pilot.press("enter")
+        assert opened == [image_path(metadata).as_uri()]
+        await pilot.hover(link)
+        assert link.styles.pointer == "pointer"
+        await pilot.click(preview)
+        assert opened == [image_path(metadata).as_uri()] * 2
+
+        await pilot.resize_terminal(45, 24)
+        await pilot.pause()
+        assert preview.size.width <= 43 and preview.size.height <= 22
+        assert app.query_one("#custom-footer").region.bottom == 24
+        await app._display_session_messages(app.agent.session.get_messages_for_display())
+        await pilot.pause()
+        assert len(app.query(ImageMessage)) == 1
+        assert app.query_one(ImageMessage).query(".image-preview")
+        image_path(metadata).unlink()
+        await app._display_session_messages(app.agent.session.get_messages_for_display())
+        await pilot.pause()
+        assert "Preview unavailable" in rendered_lines(app.query_one(".image-status"))
+        assert not app.query(".image-preview")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("no_color", [False, True])
 async def test_native_theme_preserves_terminal_foreground_and_background(tmp_path, offline_terminal, monkeypatch, no_color):

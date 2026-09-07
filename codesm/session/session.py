@@ -230,6 +230,13 @@ class Session:
         if self.context_messages and 0 <= self.context_message_count <= len(self.messages):
             source = self.context_messages + self.messages[self.context_message_count:]
         for m in source:
+            if isinstance(m.get("image"), dict):
+                from codesm.storage.images import image_path
+                path = image_path(m["image"])
+                m = {key: value for key, value in m.items() if key != "image"}
+                m["content"] = "Image output: " + m.get("content", "")
+                if path:
+                    m["content"] += f"\nSaved image: {path}"
             role = m.get("role")
             if role == "backend_input":
                 # Native tools may still be running when the user answers a question.
@@ -312,6 +319,8 @@ class Session:
     
     def clear(self):
         """Clear all messages"""
+        from codesm.storage.images import delete_images
+        delete_images(self.id)
         self.messages = []
         self.title = create_default_title()
         self._title_generated = False
@@ -350,6 +359,8 @@ class Session:
         
         # Copy messages up to fork point
         forked_messages = deepcopy(self.messages[:fork_point])
+        from codesm.storage.images import copy_images
+        copy_images(forked_messages, session_id)
         
         # Generate branch name if not provided
         if not branch_name:
@@ -374,6 +385,7 @@ class Session:
             context_message_count=self.context_message_count if fork_point == len(self.messages) else 0,
             file_state=deepcopy(self.file_state) if fork_point == len(self.messages) else {},
         )
+        copy_images(forked.context_messages, session_id)
         forked.save()
         if fork_point == len(self.messages):
             todos = Storage.read(["todo", self.id]) or []
@@ -410,6 +422,8 @@ class Session:
     def delete_by_id(cls, session_id: str) -> bool:
         """Delete a session by ID"""
         try:
+            from codesm.storage.images import delete_images
+            delete_images(session_id)
             from codesm.memory.history import HistoryStore
             HistoryStore().delete_session(session_id)
             Storage.delete(["session", session_id])

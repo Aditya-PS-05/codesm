@@ -352,6 +352,11 @@ def chat(
                 async for chunk in stream:
                     if chunk.type == "text":
                         print(chunk.content, end="", flush=True)
+                    elif chunk.type == "image":
+                        from codesm.storage.images import image_path
+                        path = image_path(chunk.metadata)
+                        location = str(path) if path else chunk.metadata.get("error", "Preview unavailable")
+                        print(f"\nImage: {chunk.content}\n{location}", flush=True)
                     elif chunk.type == "run_status":
                         print(f"\nStatus: {chunk.content}")
             print()

@@ -22,6 +22,7 @@ from .command_palette import CommandPaletteModal
 from .backend_modal import BackendSelectModal, BackendInputModal
 from codesm.agent.backends import BACKENDS
 from .chat import ChatMessage
+from .images import ImageMessage
 from .clipboard import TranscriptScreen, copy_text
 from .tools import (
     TodoListWidget, StreamingTextWidget, ToolTreeWidget, ThinkingTreeWidget,
@@ -774,6 +775,7 @@ class CodesmApp(App):
 
             response_text = ""
             rendered_text = False
+            rendered_image = False
             
             # Track current action group for Amp-style tree display
             current_action: str | None = None
@@ -820,6 +822,14 @@ class CodesmApp(App):
                             elif streaming_widget and chunk.content:
                                 # Append text to existing streaming widget
                                 streaming_widget.append_text(chunk.content)
+
+                        elif chunk.type == "image":
+                            if streaming_widget is not None:
+                                streaming_widget.mark_complete()
+                                streaming_widget = None
+                            current_action = current_tree_widget = None
+                            rendered_image = True
+                            await messages_container.mount(ImageMessage(chunk.content, chunk.metadata))
 
                         elif chunk.type == "tool_call":
                             # Finalize current streaming widget so tool call appears after it
@@ -944,7 +954,7 @@ class CodesmApp(App):
                 if not rendered_text:
                     await messages_container.mount(ChatMessage("assistant", response_text))
                 self._update_context_info(message, response_text)
-            elif not self._cancel_requested and not tool_index_map and not subagent_widgets:
+            elif not rendered_image and not self._cancel_requested and not tool_index_map and not subagent_widgets:
                 await messages_container.mount(ChatMessage("assistant", "No response received"))
 
             logger.info(f"Messages container now has {len(messages_container.children)} children")
@@ -1057,7 +1067,9 @@ class CodesmApp(App):
             role, content = msg.get("role"), msg.get("content", "")
             if not role or not content:
                 continue
-            if role == "tool_display":
+            if isinstance(msg.get("image"), dict):
+                widget = ImageMessage(content, msg["image"])
+            elif role == "tool_display":
                 name = msg.get("tool_name", "tool")
                 widget = ToolTreeWidget(self._get_tool_category(name), collapsed=not self._transcript_expanded)
                 index = widget.add_tool(name, {}, pending=False)

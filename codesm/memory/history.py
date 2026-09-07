@@ -17,10 +17,15 @@ def visible_record(record):
         return [visible_record(item) for item in record]
     if not isinstance(record, dict):
         return record
-    return {key: visible_record(value) for key, value in record.items() if key not in {
+    result = {key: visible_record(value) for key, value in record.items() if key not in {
         "response_items", "chat_response", "anthropic_content", "thinking_blocks",
         "response_model", "response_provider", "response_prefix",
     }}
+    if isinstance(result.get("image"), dict):
+        from codesm.storage.images import image_path
+        if path := image_path(result["image"]):
+            result["image"]["local_path"] = str(path)
+    return result
 
 
 def search_text(value) -> str:

@@ -3,13 +3,15 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 import json
+from pathlib import PurePosixPath
 import re
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 
 from codesm.provider.base import StreamChunk
+from codesm.storage.images import IMAGE_FORMATS, MAX_IMAGE_BYTES, save_image
 from .backends import approve, tool_call_id
 
 POLL_INTERVAL = 0.5
@@ -113,6 +115,85 @@ async def messages(client, frame_id, start=0):
             raise RuntimeError("Claude Science returned an incomplete transcript page.")
 
 
+def image_sources(record, frame_id):
+    """Science 0.1.27 uses saved cell figures and versioned artifact references."""
+    if record.get("_harness_notice"):
+        return
+    extensions = {mime: extension for extension, mime in IMAGE_FORMATS.values()}
+    cells = record.get("_cell_images")
+    if isinstance(cells, dict):
+        for figures in cells.values():
+            for figure in figures if isinstance(figures, list) else []:
+                if not isinstance(figure, dict) or not isinstance(figure.get("filename"), str):
+                    continue
+                media_type = figure.get("content_type", "image/png")
+                extension = extensions.get(media_type) if isinstance(media_type, str) else None
+                if not extension:
+                    continue
+                digest, path = figure.get("sha256"), figure.get("path")
+                if isinstance(digest, str) and re.fullmatch(r"[a-f0-9]{64}", digest):
+                    url = f"/api/frames/{resource_id(frame_id)}/cell-images/{digest}.{extension}"
+                elif isinstance(path, str) and path and len(path) <= 4096 and "\0" not in path:
+                    # Match Science's own viewer: downloads stay confined to its workspaces.
+                    url = "/api/compute/local/download?" + urlencode({
+                        "path": path, "disposition": "inline", "confine": "workspaces"})
+                else:
+                    continue
+                yield url, figure["filename"]
+    refs = record.get("_artifact_refs")
+    if isinstance(refs, dict):
+        suffixes = {"." + extension for extension in extensions.values()} | {".jpeg", ".tif"}
+        for filename, ref in refs.items():
+            if not isinstance(filename, str) or not isinstance(ref, dict) or PurePosixPath(filename).suffix.lower() not in suffixes:
+                continue
+            version, artifact = ref.get("version_id"), ref.get("artifact_id")
+            identifier = version or artifact
+            if not isinstance(identifier, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", identifier):
+                continue
+            prefix = "/api/artifacts/versions/" if version else "/api/artifacts/"
+            yield prefix + identifier, filename
+
+
+async def download_image(client, url, session_id):
+    # URLs come only from image_sources, never from arbitrary Markdown/model URLs.
+    async with client.stream("GET", url, follow_redirects=False) as response:
+        if not response.is_success:
+            raise ValueError(f"Science image request returned HTTP {response.status_code}")
+        length = response.headers.get("content-length", "")
+        if length.isdigit() and int(length) > MAX_IMAGE_BYTES:
+            raise ValueError("Image exceeds the 20 MiB preview limit")
+        data = bytearray()
+        async for part in response.aiter_bytes(64 * 1024):
+            data.extend(part)
+            if len(data) > MAX_IMAGE_BYTES:
+                raise ValueError("Image exceeds the 20 MiB preview limit")
+    return await asyncio.to_thread(save_image, bytes(data), session_id)
+
+
+async def stream_images(client, record, frame_id, session_id, seen, downloaded, displayed):
+    for url, filename in image_sources(record, frame_id):
+        key = (record["_uuid"], url)
+        if key in seen:
+            continue
+        seen.add(key)
+        if url not in downloaded:
+            metadata = {"source_url": str(client.base_url.join(url))}
+            try:
+                metadata.update(await download_image(client, url, session_id))
+            except ValueError as error:
+                metadata["error"] = str(error)
+            except (httpx.HTTPError, OSError):
+                metadata["error"] = "Could not load the image from Science"
+            downloaded[url] = metadata
+        metadata = downloaded[url]
+        identity = metadata.get("path", url)
+        if identity in displayed:
+            continue
+        displayed.add(identity)
+        caption = "".join(char for char in filename if char.isprintable())[:200] or "Research figure"
+        yield StreamChunk(type="image", content=caption, metadata=dict(metadata))
+
+
 async def answer(client, frame_id, pending, session_id, ask_user):
     kind = pending.get("kind")
     reply = {"requestId": pending.get("requestId"), "tool_id": pending.get("tool_id")}
@@ -202,9 +283,11 @@ async def stream(*, directory, prompt, state, save, model, read_only, session_id
             frame_id = state["id"] = resource_id(frame["root_frame_id"])
             save()
         seen, tools = set(), {}
+        seen_images, downloaded_images, displayed_images = set(), {}, set()
         count, anchor = 0, None
         async for record in messages(client, frame_id):
             seen.add(record["_uuid"])
+            seen_images.update((record["_uuid"], url) for url, _ in image_sources(record, frame_id))
             count, anchor = count + 1, record["_uuid"]
             for block in record.get("content", []) if isinstance(record.get("content"), list) else []:
                 if block.get("type") in {"tool_use", "server_tool_use"}:
@@ -220,34 +303,43 @@ async def stream(*, directory, prompt, state, save, model, read_only, session_id
         done, acknowledged, separated, deferred = False, False, False, False
         answered = set()
         submitted = time.monotonic()
+        image_check = submitted
         try:
             await request(client, "POST", f"/api/frames/{frame_id}/message", json=body)
             while True:
                 frame = await request(client, "GET", f"/api/frames/{frame_id}", params={"include_children": "true"})
                 # ponytail: poll saved messages for ordered, deduplicated output. Add token
                 # deltas only when Science exposes stable message/block IDs for them.
-                if frame.get("message_count") != count or frame.get("status") in TERMINAL or deferred:
-                    start = 0 if deferred or frame.get("status") in TERMINAL else max(0, count - 1)
+                if (frame.get("message_count") != count or frame.get("status") in TERMINAL or deferred
+                        or time.monotonic() - image_check >= 1):
+                    # Cell figures can arrive on a previously seen message. Recheck a
+                    # short tail while running and the complete transcript at turn end.
+                    # ponytail: 20-message live tail; use image deltas if Science publishes them.
+                    start = 0 if deferred or frame.get("status") in TERMINAL else max(0, count - 20)
                     records = [r async for r in messages(client, frame_id, start)]
-                    if start and (not records or records[0]["_uuid"] != anchor):
+                    if start and (len(records) < count - start or records[count - start - 1]["_uuid"] != anchor):
                         records = [r async for r in messages(client, frame_id)]
                         start = 0  # Compaction rewrote the transcript; IDs prevent replay.
                     count = start + len(records)
+                    image_check = time.monotonic()
                     anchor = records[-1]["_uuid"] if records else None
                     deferred = False
                     for record in records:
-                        if record["_uuid"] in seen:
-                            continue
-                        if pending_message(record):
-                            deferred = True
-                            continue
-                        seen.add(record["_uuid"])
-                        acknowledged |= (record.get("role") == "user" and not record.get("_harness_notice")
-                            and any(block.get("type") == "text" and block.get("text") == body["input_data"]["request"]
-                                    for block in record.get("content", []) if isinstance(block, dict)))
-                        for chunk in normalize(record, frame_id, tools, separated):
-                            if chunk.type == "text":
-                                separated = True
+                        if record["_uuid"] not in seen:
+                            if pending_message(record):
+                                deferred = True
+                            else:
+                                seen.add(record["_uuid"])
+                                acknowledged |= (record.get("role") == "user" and not record.get("_harness_notice")
+                                    and any(block.get("type") == "text" and block.get("text") == body["input_data"]["request"]
+                                            for block in record.get("content", []) if isinstance(block, dict)))
+                                for chunk in normalize(record, frame_id, tools, separated):
+                                    if chunk.type == "text":
+                                        separated = True
+                                    yield chunk
+                        async for chunk in stream_images(client, record, frame_id, session_id,
+                                                         seen_images, downloaded_images, displayed_images):
+                            separated = True
                             yield chunk
                 status = frame.get("status")
                 completed = acknowledged and not deferred and frame.get("completed_at") != previous_completion

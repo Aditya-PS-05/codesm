@@ -172,6 +172,10 @@ async def stream_backend(agent, message: str):
                     session.add_message("tool", chunk.content, tool_call_id=chunk.id, name=chunk.name, backend=backend)
                     session.add_message("tool_display", chunk.content, tool_call_id=chunk.id,
                                         tool_name=chunk.name, backend=backend)
+                elif chunk.type == "image":
+                    session.pending_response.pop("interrupted", None)
+                    session.commit_pending_response()
+                    session.add_message("assistant", chunk.content, image=chunk.metadata, backend=backend)
                 elif chunk.type == "usage":
                     values = chunk.metadata
                     record = agent.budget.record_usage(model=f"{backend}/{agent.model}",
@@ -193,7 +197,7 @@ async def stream_backend(agent, message: str):
                     if finished:
                         state.update(synced_messages=len(session.messages), interrupted=False)
                     session.save()
-                if chunk.type in {"tool_call", "tool_result", "run_status"}:
+                if chunk.type in {"tool_call", "tool_result", "image", "run_status"}:
                     agent._event_logger.emit("backend_event", backend=backend, event=asdict(chunk))
                 yield chunk
         if not finished:

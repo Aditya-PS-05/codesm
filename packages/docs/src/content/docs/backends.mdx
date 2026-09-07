@@ -138,6 +138,21 @@ requests from child agents in the same session, appear in codesm. Existing Scien
 grants still apply; approving a forwarded request does not create a permanent
 Science grant.
 
+Research figures attached to saved execution cells and references to image
+artifacts appear inline while the task runs. Codesm also checks for figures added
+to an existing message after its text arrives. **Open original image** opens the
+full image in your default browser; the link also works with Enter when focused.
+
+Kitty/Sixel terminals can display graphical previews. Other terminals show a
+coarse character preview, so open the original to read small plot labels. PNG,
+JPEG, WebP, GIF, BMP, and TIFF are supported (the first frame of animations).
+Images up to 20 MiB and 25 megapixels are cached privately under Codesm's data
+directory. Session records contain captions and local references, not base64
+blobs. Resume and fork retain the images; clearing or deleting a session removes
+its copies without affecting a fork. Missing, damaged, or oversized images
+leave a visible fallback and do not end the task. This does not add vision input
+to another backend; shared model history carries the caption and file reference.
+
 Completed turns continue in the same Science frame. Cancellation stops that frame,
 not the app. Since a cancelled frame cannot accept a new prompt directly, an
 interrupted or failed turn continues in a fresh frame within the same Science

@@ -396,7 +396,12 @@ API. It reuses Science sessions after completed turns, routes questions and tool
 approvals into codesm, and saves the main transcript. Text appears as Science saves
 each message. Interrupted or failed Science turns start a fresh frame in the same
 Science project with codesm's saved history; the original Science frame remains
-available. Rich artifacts and plan review stay in Science's browser. Science uses
+available. Research figures from saved cells and image artifacts appear inline as
+Science makes them available. Click **Open original image** to see full detail.
+Previews use Kitty/Sixel graphics on supported terminals, with a coarse text preview
+elsewhere. Originals are stored locally with the session and survive resume and
+fork; clearing or deleting a session removes its copies. Rich artifact editing,
+interactive/3D viewers, and plan review stay in Science's browser. Science uses
 its own sandbox and filesystem grants; codesm does not automatically mount the
 checkout. `read_only` is unsupported for this backend and is rejected before launch.
 
