@@ -7,8 +7,8 @@ and dark backgrounds. Both use vector paths and require no installed fonts.
 
 [`codesm-astra-demo.mp4`](codesm-astra-demo.mp4) is the final **56.6-second** edit
 at 1920×1080, 30 fps, encoded as H.264. The first second of the original export
-has been removed. `codesm-astra-demo.jpg` is a clickable preview made from an
-actual frame of the video.
+has been removed. `codesm-astra-cover.png` is the original Codesm title cover,
+used as the clickable YouTube preview in the README.
 
 The footage shows a real native Codesm session using GPT-6 Astra to build Lunar
 Courier, a playable browser game with original Canvas assets. Build excerpts

@@ -14,7 +14,7 @@
 
 <p>
   <a href="#installation">Get started</a> ·
-  <a href="assets/codesm-astra-demo.mp4">Watch the 57-second demo</a> ·
+  <a href="https://youtu.be/5KWOrBWat3A">Watch the 57-second demo on YouTube</a> ·
   <a href="#agent-backends">Agent backends</a>
 </p>
 
@@ -27,8 +27,8 @@
 <h2>One prompt. A playable game.</h2>
 
 <p>
-  <a href="assets/codesm-astra-demo.mp4">
-    <img src="assets/codesm-astra-demo.jpg" width="900" alt="Watch the 57-second Codesm demo: GPT-6 Astra builds Lunar Courier, a playable space game, presented in a Mac-style window." />
+  <a href="https://youtu.be/5KWOrBWat3A">
+    <img src="assets/codesm-astra-cover.png" width="900" alt="Watch the 57-second Codesm demo on YouTube: Codesm's Your models. One workspace. title card in a Mac-style window." />
   </a>
 </p>
 
@@ -38,7 +38,7 @@
 </p>
 
 <p>
-  <strong><a href="assets/codesm-astra-demo.mp4">Watch the full demo — 57 seconds</a></strong> ·
+  <strong><a href="https://youtu.be/5KWOrBWat3A">▶ Watch on YouTube — 57 seconds</a></strong> ·
   <a href="assets/codesm-astra-demo.mp4?raw=true">Download MP4</a> ·
   <a href="assets/README.md">Recording notes</a>
 </p>
